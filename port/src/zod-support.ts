@@ -1,14 +1,37 @@
 /**
  * Zod schema support.
  *
- * Detects Zod schemas and converts them to JSON Schema.
- * Supports Zod v4 (z.toJSONSchema built-in) and Zod v3 (via zod-to-json-schema).
+ * Detects Zod schemas via duck-typing and converts them to JSON Schema.
+ * Requires Zod v4+ (which ships z.toJSONSchema built-in).
  *
- * Zod is a peer/optional dependency — this module is the only place
+ * Zod is an optional peer dependency — this module is the only place
  * that interacts with Zod, keeping the core library Zod-free.
  */
 
-import * as z from 'zod';
+import { createRequire } from 'node:module';
+
+// ---------------------------------------------------------------------------
+// Lazy zod module loading
+// ---------------------------------------------------------------------------
+
+let _zod: any;
+let _zodLoaded = false;
+
+/**
+ * Lazily load the consumer's installed `zod` module (synchronous).
+ * Returns the module or null if not installed.
+ */
+function loadZod(): any {
+  if (_zodLoaded) return _zod;
+  _zodLoaded = true;
+  try {
+    const req = createRequire(import.meta.url);
+    _zod = req('zod');
+  } catch {
+    _zod = null;
+  }
+  return _zod;
+}
 
 // ---------------------------------------------------------------------------
 // Schema type detection
@@ -31,6 +54,20 @@ export function isZodSchema(schema: unknown): boolean {
   );
 }
 
+/**
+ * Check whether a Zod-like schema object comes from Zod v4+.
+ *
+ * Zod v4 schemas carry a `_zod` property on every schema instance.
+ * Zod v3 (and earlier) schemas do not.
+ */
+function isZodV4Schema(schema: unknown): boolean {
+  return (
+    typeof schema === 'object' &&
+    schema !== null &&
+    '_zod' in (schema as Record<string, unknown>)
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Conversion
 // ---------------------------------------------------------------------------
@@ -38,21 +75,32 @@ export function isZodSchema(schema: unknown): boolean {
 /**
  * Convert a Zod schema to a JSON Schema object.
  *
- * Uses Zod v4's built-in `z.toJSONSchema()` if available,
- * otherwise falls back to `zod-to-json-schema` for v3.
+ * Requires Zod v4+ (uses `z.toJSONSchema()` which is built into v4).
+ * Throws a clear error if the consumer is on an older version.
  *
  * @param zodSchema  A Zod schema (z.string(), z.object({...}), etc.)
  * @returns          A JSON Schema object suitable for passing to parseSchema/parser.
  */
 export function zodSchemaToJsonSchema(zodSchema: unknown): Record<string, unknown> {
-  if (typeof z.toJSONSchema === 'function') {
-    return z.toJSONSchema(zodSchema as z.ZodType) as Record<string, unknown>;
+  // ---- Version gate ----
+  if (!isZodV4Schema(zodSchema)) {
+    throw new Error(
+      'shapeLM requires Zod v4 or later. The schema you passed appears to be from ' +
+      'an older version of Zod (v3 or earlier). Please upgrade: npm install zod@latest',
+    );
   }
 
-  throw new Error(
-    'Cannot convert Zod schema to JSON Schema: ' +
-    'zod v4+ with toJSONSchema support is required',
-  );
+  // ---- Load the consumer's zod module ----
+  const z = loadZod();
+
+  if (!z || typeof z.toJSONSchema !== 'function') {
+    throw new Error(
+      'shapeLM could not load the `zod` module, or the installed version does not ' +
+      'export `toJSONSchema`. Ensure Zod v4+ is installed: npm install zod@latest',
+    );
+  }
+
+  return z.toJSONSchema(zodSchema) as Record<string, unknown>;
 }
 
 // ---------------------------------------------------------------------------
@@ -69,4 +117,3 @@ export function normalizeSchema(schema: unknown): Record<string, unknown> {
   }
   return schema as Record<string, unknown>;
 }
-
