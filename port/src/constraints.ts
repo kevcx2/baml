@@ -387,11 +387,11 @@ export function validateSchemaConstraints(
 // Format validators
 // ---------------------------------------------------------------------------
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const DATETIME_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/;
 const TIME_RE = /^\d{2}:\d{2}:\d{2}/;
-const URI_RE = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
+const URI_RE = /^[a-zA-Z][a-zA-Z0-9+.-]*:\S/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const IPV4_RE = /^(\d{1,3}\.){3}\d{1,3}$/;
 const IPV6_RE = /^([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}$/;
