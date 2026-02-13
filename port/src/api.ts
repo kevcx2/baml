@@ -26,6 +26,7 @@ import {
 } from './output-format.js';
 import { validateSchemaConstraints, type ConstraintViolation } from './constraints.js';
 import { normalizeSchema, isZodSchema } from './zod-support.js';
+import { StreamParser, type StreamParserOptions, type StreamResult } from './stream-parser.js';
 
 // Re-export legacy API unchanged.
 export { renderOutputFormat, renderOutputFormatFromType } from './output-format.js';
@@ -151,6 +152,24 @@ export function prompt(
 }
 
 // ---------------------------------------------------------------------------
+// stream() — one-shot stream creation
+// ---------------------------------------------------------------------------
+
+/**
+ * Create a streaming parser for the given schema.
+ *
+ * Equivalent to `parser(schema, options).stream()` but without
+ * requiring you to create a parser factory first.
+ */
+export function stream<T = unknown>(
+  schema: SchemaInput,
+  options?: ParserOptions,
+): StreamParser<T> {
+  const p = parser<T>(schema, options);
+  return p.stream();
+}
+
+// ---------------------------------------------------------------------------
 // parser() — factory
 // ---------------------------------------------------------------------------
 
@@ -164,6 +183,11 @@ export interface Parser<T = unknown> {
   parse(text: string): ParseResult<T>;
   /** Render the output format prompt snippet for the bound schema. */
   prompt(): string;
+  /**
+   * Create a streaming parser for incremental LLM output.
+   * Call .feed(chunk) as tokens arrive, then .done() when complete.
+   */
+  stream(options?: StreamParserOptions): StreamParser<T>;
   /** The JSON Schema this parser was created with. */
   schema: Record<string, unknown>;
 }
@@ -243,6 +267,18 @@ export function parser<T = unknown>(
 
     prompt(): string {
       return outputFormat;
+    },
+
+    stream(streamOpts?: StreamParserOptions): StreamParser<T> {
+      return new StreamParser<T>({
+        targetType: schemaConversion.type,
+        definitions: schemaConversion.definitions,
+        jsonSchema,
+        outputFormat,
+        parseOptions: streamOpts?.parse ?? options?.parse,
+        rules: streamOpts?.rules ?? options?.rules,
+        validateConstraints: streamOpts?.validateConstraints ?? options?.validateConstraints,
+      });
     },
   };
 }

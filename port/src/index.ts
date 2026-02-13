@@ -22,6 +22,7 @@ export {
   parseSchema,
   prompt,
   parser,
+  stream,
   type Parser,
   type ParseSchemaOptions,
   type ParserOptions,
@@ -132,3 +133,14 @@ export {
   zodSchemaToJsonSchema,
   normalizeSchema,
 } from './zod-support.js';
+
+// ---------------------------------------------------------------------------
+// Streaming
+// ---------------------------------------------------------------------------
+
+export { StreamParser } from './stream-parser.js';
+export type {
+  DeepPartial,
+  StreamResult,
+  StreamParserOptions,
+} from './stream-parser.js';
