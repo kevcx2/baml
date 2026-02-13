@@ -1,17 +1,13 @@
 /**
- * structured-output
+ * shapeLM
  *
  * Parse and validate arbitrary LLM text into structured data using JSON Schema.
  *
  * Primary API:
- *   - `prompt(s)`           — Render an output format prompt snippet
- *   - `structure(s, text)`  — Parse + validate LLM text → StructuredResult<T>
- *   - `stream(s)`           — Streaming parser with .feed() / .close()
- *   - `parser(s)`           — Factory: pre-compiled schema, .structure() / .prompt() / .stream()
- *
- * Legacy API (still exported):
- *   - `coerceToSchema(text, schema)` — returns raw CoercionResult
- *   - `renderOutputFormat(schema)` / `renderOutputFormatFromType(type)`
+ *   - `prompt(s)`        — Render an output format prompt snippet
+ *   - `shape(s, text)`   — Parse + validate LLM text → StructuredResult<T>
+ *   - `stream(s)`        — Streaming parser with .feed() / .close()
+ *   - `shaper(s)`        — Factory: pre-compiled schema, .shape() / .prompt() / .stream()
  */
 
 // ---------------------------------------------------------------------------
@@ -19,17 +15,15 @@
 // ---------------------------------------------------------------------------
 
 export {
-  // New API
-  structure,
+  shape,
   prompt,
-  parser,
+  shaper,
   stream,
-  type Parser,
-  type StructureOptions,
-  type ParserOptions,
+  type Shaper,
+  type ShapeOptions,
+  type ShaperOptions,
   type ValidationRule,
   type SchemaInput,
-  // Legacy API
   coerceToSchema,
   renderOutputFormat,
   renderOutputFormatFromType,
@@ -41,8 +35,8 @@ export {
 // StructuredResult
 // ---------------------------------------------------------------------------
 
-export { StructuredResult, StructuredResultError } from './parse-result.js';
-export type { Coercion, Repair } from './parse-result.js';
+export { StructuredResult, StructuredResultError } from './structured-result.js';
+export type { Coercion, Repair } from './structured-result.js';
 
 // ---------------------------------------------------------------------------
 // Constraints

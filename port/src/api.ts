@@ -3,14 +3,14 @@
  *
  * Three entry points:
  *   1. `prompt(s)`           — render an output format prompt snippet
- *   2. `structure(s, text)`  — one-shot parse, returns StructuredResult<T>
+ *   2. `shape(s, text)`      — one-shot parse, returns StructuredResult<T>
  *   3. `stream(s)`           — streaming parser with .feed() / .close()
  *
  * Factory (for pre-compiled schemas):
- *   - `parser(s)` — bundles schema+options, exposes .structure() / .prompt() / .stream()
+ *   - `shaper(s)` — bundles schema+options, exposes .shape() / .prompt() / .stream()
  *
- * Legacy (still exported for backward compat):
- *   - `coerceToSchema(text, schema)` — original API returning CoercionResult
+ * Internal (used by shape()):
+ *   - `coerceToSchema(text, schema)` — low-level coercion returning CoercionResult
  *   - `renderOutputFormat(schema)` / `renderOutputFormatFromType(type)`
  */
 
@@ -21,7 +21,7 @@ import { ParsingContext } from './coercer/context.js';
 import { totalScore } from './flags.js';
 import type { CoercionResult, ParseError } from './result.js';
 import type { FieldType as FieldTypeT } from './types.js';
-import { StructuredResult } from './parse-result.js';
+import { StructuredResult } from './structured-result.js';
 import {
   renderOutputFormat,
   renderOutputFormatFromType,
@@ -64,7 +64,7 @@ export interface CoerceOptions {
  */
 export type SchemaInput = Record<string, unknown> | { _def: unknown; parse: Function };
 
-export interface StructureOptions extends CoerceOptions {
+export interface ShapeOptions extends CoerceOptions {
   /** Options for prompt rendering. */
   render?: RenderOptions;
   /** Custom validation rules run after coercion. */
@@ -81,7 +81,7 @@ export interface StructureOptions extends CoerceOptions {
 // ============================================================================
 
 // ---------------------------------------------------------------------------
-// structure() — one-shot parse
+// shape() — one-shot parse
 // ---------------------------------------------------------------------------
 
 /**
@@ -91,10 +91,10 @@ export interface StructureOptions extends CoerceOptions {
  * @param text    Raw LLM output text.
  * @param options Optional configuration.
  */
-export function structure<T = unknown>(
+export function shape<T = unknown>(
   schema: SchemaInput,
   text: string,
-  options?: StructureOptions,
+  options?: ShapeOptions,
 ): StructuredResult<T> {
   const jsonSchema = normalizeSchema(schema);
   const outputFormat = renderOutputFormat(jsonSchema, options?.render);
@@ -157,29 +157,29 @@ export function prompt(
 /**
  * Create a streaming parser for the given schema.
  *
- * Equivalent to `parser(schema, options).stream()` but without
- * requiring you to create a parser factory first.
+ * Equivalent to `shaper(schema, options).stream()` but without
+ * requiring you to create a shaper factory first.
  */
 export function stream<T = unknown>(
   schema: SchemaInput,
-  options?: ParserOptions,
+  options?: ShaperOptions,
 ): StreamParser<T> {
-  const p = parser<T>(schema, options);
-  return p.stream();
+  const s = shaper<T>(schema, options);
+  return s.stream();
 }
 
 // ---------------------------------------------------------------------------
-// parser() — factory
+// shaper() — factory
 // ---------------------------------------------------------------------------
 
-export interface ParserOptions extends StructureOptions {
+export interface ShaperOptions extends ShapeOptions {
   /** Options for prompt rendering. */
   render?: RenderOptions;
 }
 
-export interface Parser<T = unknown> {
+export interface Shaper<T = unknown> {
   /** Parse LLM text against the bound schema. */
-  structure(text: string): StructuredResult<T>;
+  shape(text: string): StructuredResult<T>;
   /** Render the output format prompt snippet for the bound schema. */
   prompt(): string;
   /**
@@ -187,19 +187,19 @@ export interface Parser<T = unknown> {
    * Call .feed(chunk) as tokens arrive, then .close() when complete.
    */
   stream(options?: StreamParserOptions): StreamParser<T>;
-  /** The JSON Schema this parser was created with. */
+  /** The JSON Schema this shaper was created with. */
   schema: Record<string, unknown>;
 }
 
 /**
- * Create a reusable parser bound to a specific JSON Schema (or Zod schema).
+ * Create a reusable shaper bound to a specific JSON Schema (or Zod schema).
  *
- * The schema is compiled once; subsequent .structure() calls skip re-compilation.
+ * The schema is compiled once; subsequent .shape() calls skip re-compilation.
  */
-export function parser<T = unknown>(
+export function shaper<T = unknown>(
   schema: SchemaInput,
-  options?: ParserOptions,
-): Parser<T> {
+  options?: ShaperOptions,
+): Shaper<T> {
   const jsonSchema = normalizeSchema(schema);
   const schemaConversion = schemaToType(jsonSchema, options?.schema);
   const outputFormat = renderOutputFormat(jsonSchema, options?.render);
@@ -207,7 +207,7 @@ export function parser<T = unknown>(
   return {
     schema: jsonSchema,
 
-    structure(text: string): StructuredResult<T> {
+    shape(text: string): StructuredResult<T> {
       const parsed = structuralParse(text, options?.parse);
       const ctx = new ParsingContext(schemaConversion.definitions);
       const result = coerce(parsed, schemaConversion.type, ctx);
@@ -277,11 +277,11 @@ export function parser<T = unknown>(
 }
 
 // ============================================================================
-// LEGACY API (preserved for backward compat)
+// INTERNAL
 // ============================================================================
 
 /**
- * @deprecated Use `structure()` or `parser()` instead.
+ * Low-level coercion. Used internally by shape().
  */
 export function coerceToSchema(
   text: string,

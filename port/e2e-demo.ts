@@ -11,8 +11,8 @@
 import OpenAI from 'openai';
 import { z } from 'zod';
 import {
-  parser,
-  structure,
+  shaper,
+  shape,
   prompt,
   stream,
   type StructuredResult,
@@ -96,7 +96,7 @@ async function test1_staticPerson() {
   console.log('  ' + raw.replace(/\n/g, '\n  '));
   console.log();
 
-  const result = structure<{ name: string; age: number; occupation: string }>(
+  const result = shape<{ name: string; age: number; occupation: string }>(
     personSchema,
     raw,
   );
@@ -125,7 +125,7 @@ async function test2_staticZod() {
 
   type MovieReview = z.infer<typeof MovieReview>;
 
-  const p = parser<MovieReview>(MovieReview as any, {
+  const p = shaper<MovieReview>(MovieReview as any, {
     rules: [
       (v: any) => v.pros.length > 0 ? true : 'Must list at least one pro',
       (v: any) => v.cons.length > 0 ? true : 'Must list at least one con',
@@ -155,7 +155,7 @@ async function test2_staticZod() {
   console.log('  ' + raw.replace(/\n/g, '\n  '));
   console.log();
 
-  const result = p.structure(raw);
+  const result = p.shape(raw);
   console.log('  Parsed result:');
   printResult(result);
 
@@ -198,7 +198,7 @@ async function test3_staticEnum() {
   const raw = response.choices[0].message.content ?? '';
   console.log('  Raw LLM output: ' + raw);
 
-  const result = structure<string>(sentimentSchema, raw);
+  const result = shape<string>(sentimentSchema, raw);
   console.log('  Parsed result:');
   printResult(result);
   console.log(`\n  ✓ Sentiment: ${result.assert()}`);
@@ -226,7 +226,7 @@ async function test4_streamingPerson() {
     required: ['name', 'birth_year', 'achievements', 'field'],
   };
 
-  const p = parser<{
+  const p = shaper<{
     name: string;
     birth_year: number;
     achievements: string[];
@@ -307,7 +307,7 @@ async function test5_streamingArray() {
 
   type Recipe = z.infer<typeof RecipeSchema>;
 
-  const p = parser<Recipe>(RecipeSchema as any);
+  const p = shaper<Recipe>(RecipeSchema as any);
 
   console.log('  Prompt format:');
   console.log('  ' + p.prompt().replace(/\n/g, '\n  '));
@@ -383,7 +383,7 @@ async function test6_feedbackLoop() {
     required: ['haiku_line1', 'haiku_line2', 'haiku_line3', 'topic'],
   };
 
-  const p = parser<{
+  const p = shaper<{
     haiku_line1: string;
     haiku_line2: string;
     haiku_line3: string;
@@ -421,7 +421,7 @@ async function test6_feedbackLoop() {
     const raw = response.choices[0].message.content ?? '';
     console.log(`  Raw: ${raw.slice(0, 100)}...`);
 
-    result = p.structure(raw);
+    result = p.shape(raw);
     console.log(`  ok: ${result.ok}, score: ${result.score}`);
 
     if (result.ok) {

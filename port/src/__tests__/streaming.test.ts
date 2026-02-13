@@ -4,7 +4,7 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  parser,
+  shaper,
   stream,
   StreamParser,
   StructuredResult,
@@ -38,18 +38,18 @@ const INT_LIST_SCHEMA = {
 };
 
 // ============================================================================
-// StreamParser via parser().stream()
+// StreamParser via shaper().stream()
 // ============================================================================
 
-describe('parser().stream()', () => {
+describe('shaper().stream()', () => {
   it('creates a StreamParser', () => {
-    const p = parser(PERSON_SCHEMA);
+    const p = shaper(PERSON_SCHEMA);
     const s = p.stream();
     expect(s).toBeInstanceOf(StreamParser);
   });
 
   it('feed returns StreamResult', () => {
-    const p = parser(PERSON_SCHEMA);
+    const p = shaper(PERSON_SCHEMA);
     const s = p.stream();
     const r = s.feed('{"name":');
     expect(r).toBeDefined();
@@ -57,7 +57,7 @@ describe('parser().stream()', () => {
   });
 
   it('accumulates text across feed calls', () => {
-    const p = parser(PERSON_SCHEMA);
+    const p = shaper(PERSON_SCHEMA);
     const s = p.stream();
     s.feed('{"name');
     s.feed('": "Ali');
@@ -66,7 +66,7 @@ describe('parser().stream()', () => {
   });
 
   it('partial JSON converges to full result', () => {
-    const p = parser<{ name: string; age: number }>(PERSON_SCHEMA);
+    const p = shaper<{ name: string; age: number }>(PERSON_SCHEMA);
     const s = p.stream();
 
     // Incomplete JSON
@@ -82,7 +82,7 @@ describe('parser().stream()', () => {
   });
 
   it('close() returns StructuredResult', () => {
-    const p = parser<{ name: string; age: number }>(PERSON_SCHEMA);
+    const p = shaper<{ name: string; age: number }>(PERSON_SCHEMA);
     const s = p.stream();
     s.feed('{"name": "Alice", "age": 30}');
     const r = s.close();
@@ -94,7 +94,7 @@ describe('parser().stream()', () => {
 
   it('close() runs constraint validation', () => {
     const schema = { type: 'integer', minimum: 0 } as const;
-    const p = parser<number>(schema);
+    const p = shaper<number>(schema);
     const s = p.stream();
     s.feed('-5');
     const r = s.close();
@@ -103,7 +103,7 @@ describe('parser().stream()', () => {
   });
 
   it('close() runs custom rules', () => {
-    const p = parser<number>(INT_SCHEMA, {
+    const p = shaper<number>(INT_SCHEMA, {
       rules: [(v) => (v as number) > 0 ? true : 'must be positive'],
     });
     const s = p.stream();
@@ -114,7 +114,7 @@ describe('parser().stream()', () => {
   });
 
   it('throws if feed() called after close()', () => {
-    const p = parser(PERSON_SCHEMA);
+    const p = shaper(PERSON_SCHEMA);
     const s = p.stream();
     s.feed('{"name": "Alice", "age": 30}');
     s.close();
@@ -122,7 +122,7 @@ describe('parser().stream()', () => {
   });
 
   it('throws if close() called twice', () => {
-    const p = parser(PERSON_SCHEMA);
+    const p = shaper(PERSON_SCHEMA);
     const s = p.stream();
     s.feed('{"name": "Alice", "age": 30}');
     s.close();
@@ -130,7 +130,7 @@ describe('parser().stream()', () => {
   });
 
   it('current() returns last successful result', () => {
-    const p = parser<{ name: string; age: number }>(PERSON_SCHEMA);
+    const p = shaper<{ name: string; age: number }>(PERSON_SCHEMA);
     const s = p.stream();
     s.feed('{"name": "Alice", "age": 30}');
     const r = s.current();
@@ -139,7 +139,7 @@ describe('parser().stream()', () => {
   });
 
   it('text() returns accumulated raw text', () => {
-    const p = parser(PERSON_SCHEMA);
+    const p = shaper(PERSON_SCHEMA);
     const s = p.stream();
     s.feed('chunk1');
     s.feed('chunk2');
@@ -172,7 +172,7 @@ describe('stream()', () => {
 
 describe('Simulated streaming scenarios', () => {
   it('token-by-token JSON object', () => {
-    const p = parser<{ name: string; age: number }>(PERSON_SCHEMA);
+    const p = shaper<{ name: string; age: number }>(PERSON_SCHEMA);
     const s = p.stream();
 
     const tokens = ['{"', 'name', '":', ' "', 'Alice', '",', ' "age', '": ', '30', '}'];
@@ -187,7 +187,7 @@ describe('Simulated streaming scenarios', () => {
   });
 
   it('streaming markdown-wrapped JSON', () => {
-    const p = parser<{ name: string; age: number }>(PERSON_SCHEMA);
+    const p = shaper<{ name: string; age: number }>(PERSON_SCHEMA);
     const s = p.stream();
 
     s.feed('Here is the result:\n');
@@ -203,7 +203,7 @@ describe('Simulated streaming scenarios', () => {
   });
 
   it('streaming with prose prefix', () => {
-    const p = parser<{ name: string; age: number }>(PERSON_SCHEMA);
+    const p = shaper<{ name: string; age: number }>(PERSON_SCHEMA);
     const s = p.stream();
 
     s.feed('Based on my analysis, ');
@@ -216,7 +216,7 @@ describe('Simulated streaming scenarios', () => {
   });
 
   it('streaming string', () => {
-    const p = parser<string>(STRING_SCHEMA);
+    const p = shaper<string>(STRING_SCHEMA);
     const s = p.stream();
 
     s.feed('Hello');
@@ -228,7 +228,7 @@ describe('Simulated streaming scenarios', () => {
   });
 
   it('streaming integer', () => {
-    const p = parser<number>(INT_SCHEMA);
+    const p = shaper<number>(INT_SCHEMA);
     const s = p.stream();
 
     s.feed('4');
@@ -240,7 +240,7 @@ describe('Simulated streaming scenarios', () => {
   });
 
   it('streaming array', () => {
-    const p = parser<Array<{ name: string; age: number }>>(PERSON_LIST_SCHEMA);
+    const p = shaper<Array<{ name: string; age: number }>>(PERSON_LIST_SCHEMA);
     const s = p.stream();
 
     s.feed('[{"name": "A", "age": 1}');
@@ -258,7 +258,7 @@ describe('Simulated streaming scenarios', () => {
   });
 
   it('handles empty stream gracefully', () => {
-    const p = parser<string>(STRING_SCHEMA);
+    const p = shaper<string>(STRING_SCHEMA);
     const s = p.stream();
     // No feed calls
     const r = s.close();
@@ -267,7 +267,7 @@ describe('Simulated streaming scenarios', () => {
   });
 
   it('partial data becomes available progressively', () => {
-    const p = parser<{ name: string; age: number }>(PERSON_SCHEMA);
+    const p = shaper<{ name: string; age: number }>(PERSON_SCHEMA);
     const s = p.stream();
 
     // Feed partial JSON that the fixing parser can handle
@@ -296,7 +296,7 @@ describe('Streaming with constraints and rules', () => {
       },
       required: ['name', 'age'],
     };
-    const p = parser<{ name: string; age: number }>(schema);
+    const p = shaper<{ name: string; age: number }>(schema);
     const s = p.stream();
 
     // Feed data that violates constraints
@@ -313,7 +313,7 @@ describe('Streaming with constraints and rules', () => {
   });
 
   it('rules are applied on close() only', () => {
-    const p = parser<number>(INT_SCHEMA, {
+    const p = shaper<number>(INT_SCHEMA, {
       rules: [(v) => (v as number) % 2 === 0 ? true : 'must be even'],
     });
     const s = p.stream();
@@ -324,9 +324,9 @@ describe('Streaming with constraints and rules', () => {
     expect(r.errors.join('; ')).toContain('must be even');
   });
 
-  it('stream-level rules override parser rules', () => {
-    const p = parser<number>(INT_SCHEMA, {
-      rules: [(v) => (v as number) > 0 ? true : 'parser: must be positive'],
+  it('stream-level rules override shaper rules', () => {
+    const p = shaper<number>(INT_SCHEMA, {
+      rules: [(v) => (v as number) > 0 ? true : 'shaper: must be positive'],
     });
     const s = p.stream({
       rules: [(v) => (v as number) > 10 ? true : 'stream: must be > 10'],
@@ -340,7 +340,7 @@ describe('Streaming with constraints and rules', () => {
 
   it('can disable constraints on stream', () => {
     const schema = { type: 'integer', minimum: 0 };
-    const p = parser<number>(schema);
+    const p = shaper<number>(schema);
     const s = p.stream({ validateConstraints: false });
     s.feed('-5');
 

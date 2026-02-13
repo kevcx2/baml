@@ -16,7 +16,7 @@ import { ParsingContext } from './coercer/context.js';
 import { totalScore } from './flags.js';
 import type { Flag } from './flags.js';
 import type { FieldType as FieldTypeT } from './types.js';
-import { StructuredResult } from './parse-result.js';
+import { StructuredResult } from './structured-result.js';
 import { validateSchemaConstraints } from './constraints.js';
 import type { ValidationRule } from './api.js';
 

@@ -5,9 +5,9 @@
 import { describe, it, expect } from 'vitest';
 import { z } from 'zod';
 import {
-  structure,
+  shape,
   prompt,
-  parser,
+  shaper,
   isZodSchema,
   zodSchemaToJsonSchema,
   normalizeSchema,
@@ -134,24 +134,24 @@ describe('normalizeSchema()', () => {
 });
 
 // ============================================================================
-// structure() with Zod schemas
+// shape() with Zod schemas
 // ============================================================================
 
-describe('structure() with Zod', () => {
+describe('shape() with Zod', () => {
   it('parses string with z.string()', () => {
-    const r = structure(z.string() as any, '"hello"');
+    const r = shape(z.string() as any, '"hello"');
     expect(r.ok).toBe(true);
     expect(r.data).toBe('hello');
   });
 
   it('parses number with z.number()', () => {
-    const r = structure(z.number() as any, '42');
+    const r = shape(z.number() as any, '42');
     expect(r.ok).toBe(true);
     expect(r.data).toBe(42);
   });
 
   it('parses boolean with z.boolean()', () => {
-    const r = structure(z.boolean() as any, 'true');
+    const r = shape(z.boolean() as any, 'true');
     expect(r.ok).toBe(true);
     expect(r.data).toBe(true);
   });
@@ -161,7 +161,7 @@ describe('structure() with Zod', () => {
       name: z.string(),
       age: z.number(),
     });
-    const r = structure<{ name: string; age: number }>(
+    const r = shape<{ name: string; age: number }>(
       schema as any,
       '{"name": "Alice", "age": 30}',
     );
@@ -171,20 +171,20 @@ describe('structure() with Zod', () => {
   });
 
   it('parses array with z.array()', () => {
-    const r = structure<number[]>(z.array(z.number()) as any, '[1, 2, 3]');
+    const r = shape<number[]>(z.array(z.number()) as any, '[1, 2, 3]');
     expect(r.ok).toBe(true);
     expect(r.data).toEqual([1, 2, 3]);
   });
 
   it('parses enum with z.enum()', () => {
-    const r = structure(z.enum(['RED', 'GREEN', 'BLUE']) as any, '"RED"');
+    const r = shape(z.enum(['RED', 'GREEN', 'BLUE']) as any, '"RED"');
     expect(r.ok).toBe(true);
     expect(r.data).toBe('RED');
   });
 
   it('validates constraints from Zod schema', () => {
     const schema = z.number().min(0).max(100);
-    const r = structure(schema as any, '-5');
+    const r = shape(schema as any, '-5');
     expect(r.ok).toBe(false);
     expect(r.errors.join('; ')).toContain('minimum');
   });
@@ -195,18 +195,18 @@ describe('structure() with Zod', () => {
       age: z.number(),
     });
     const text = '```json\n{"name": "Bob", "age": 25}\n```';
-    const r = structure<{ name: string; age: number }>(schema as any, text);
+    const r = shape<{ name: string; age: number }>(schema as any, text);
     expect(r.ok).toBe(true);
     expect(r.data?.name).toBe('Bob');
   });
 
   it('returns StructuredResult instance', () => {
-    const r = structure(z.string() as any, '"hello"');
+    const r = shape(z.string() as any, '"hello"');
     expect(r).toBeInstanceOf(StructuredResult);
   });
 
   it('.assert() works with Zod schema', () => {
-    const r = structure<string>(z.string() as any, '"hello"');
+    const r = shape<string>(z.string() as any, '"hello"');
     expect(r.assert()).toBe('hello');
   });
 
@@ -215,7 +215,7 @@ describe('structure() with Zod', () => {
       name: z.string(),
       age: z.number(),
     });
-    const r = structure(schema as any, '{"name": "Alice", "age": "30"}');
+    const r = shape(schema as any, '{"name": "Alice", "age": "30"}');
     const fb = r.feedback();
     expect(fb).toBeDefined();
   });
@@ -250,27 +250,27 @@ describe('prompt() with Zod', () => {
 });
 
 // ============================================================================
-// parser() with Zod schemas
+// shaper() with Zod schemas
 // ============================================================================
 
-describe('parser() with Zod', () => {
-  it('creates parser from Zod schema', () => {
+describe('shaper() with Zod', () => {
+  it('creates shaper from Zod schema', () => {
     const schema = z.object({
       name: z.string(),
       age: z.number(),
     });
-    const p = parser<{ name: string; age: number }>(schema as any);
-    expect(typeof p.structure).toBe('function');
+    const p = shaper<{ name: string; age: number }>(schema as any);
+    expect(typeof p.shape).toBe('function');
     expect(typeof p.prompt).toBe('function');
   });
 
-  it('.structure() works', () => {
+  it('.shape() works', () => {
     const schema = z.object({
       name: z.string(),
       age: z.number(),
     });
-    const p = parser<{ name: string; age: number }>(schema as any);
-    const r = p.structure('{"name": "Alice", "age": 30}');
+    const p = shaper<{ name: string; age: number }>(schema as any);
+    const r = p.shape('{"name": "Alice", "age": 30}');
     expect(r.ok).toBe(true);
     expect(r.data?.name).toBe('Alice');
   });
@@ -280,28 +280,28 @@ describe('parser() with Zod', () => {
       name: z.string(),
       age: z.number(),
     });
-    const p = parser(schema as any);
+    const p = shaper(schema as any);
     const fmt = p.prompt();
     expect(fmt).toContain('name');
   });
 
   it('reusable with Zod schema', () => {
     const schema = z.object({ value: z.number() });
-    const p = parser<{ value: number }>(schema as any);
-    expect(p.structure('{"value": 1}').data?.value).toBe(1);
-    expect(p.structure('{"value": 2}').data?.value).toBe(2);
+    const p = shaper<{ value: number }>(schema as any);
+    expect(p.shape('{"value": 1}').data?.value).toBe(1);
+    expect(p.shape('{"value": 2}').data?.value).toBe(2);
   });
 
-  it('validates Zod constraints via parser', () => {
+  it('validates Zod constraints via shaper', () => {
     const schema = z.number().min(0).max(100);
-    const p = parser<number>(schema as any);
-    expect(p.structure('50').ok).toBe(true);
-    expect(p.structure('-1').ok).toBe(false);
+    const p = shaper<number>(schema as any);
+    expect(p.shape('50').ok).toBe(true);
+    expect(p.shape('-1').ok).toBe(false);
   });
 
   it('schema property is the JSON Schema (not the Zod schema)', () => {
     const zodSchema = z.string();
-    const p = parser(zodSchema as any);
+    const p = shaper(zodSchema as any);
     // The schema property should be the converted JSON Schema
     expect(p.schema.type).toBe('string');
   });

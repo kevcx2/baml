@@ -4,8 +4,8 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  structure,
-  parser,
+  shape,
+  shaper,
   extractConstraints,
   validateConstraints,
   validateSchemaConstraints,
@@ -368,59 +368,59 @@ describe('validateSchemaConstraints()', () => {
 });
 
 // ============================================================================
-// Integration: structure() with constraints
+// Integration: shape() with constraints
 // ============================================================================
 
-describe('structure() with constraints', () => {
+describe('shape() with constraints', () => {
   it('fails when integer violates minimum', () => {
     const schema = { type: 'integer', minimum: 0 };
-    const r = structure(schema, '-5');
+    const r = shape(schema, '-5');
     expect(r.ok).toBe(false);
     expect(r.errors.join('; ')).toContain('minimum');
   });
 
   it('passes when integer satisfies minimum', () => {
     const schema = { type: 'integer', minimum: 0 };
-    const r = structure(schema, '5');
+    const r = shape(schema, '5');
     expect(r.ok).toBe(true);
   });
 
   it('fails when string violates minLength', () => {
     const schema = { type: 'string', minLength: 10 };
-    const r = structure(schema, '"hi"');
+    const r = shape(schema, '"hi"');
     expect(r.ok).toBe(false);
     expect(r.errors.join('; ')).toContain('less than minimum');
   });
 
   it('fails when string violates pattern', () => {
     const schema = { type: 'string', pattern: '^[A-Z]+$' };
-    const r = structure(schema, '"hello"');
+    const r = shape(schema, '"hello"');
     expect(r.ok).toBe(false);
     expect(r.errors.join('; ')).toContain('pattern');
   });
 
   it('passes when string matches pattern', () => {
     const schema = { type: 'string', pattern: '^[A-Z]+$' };
-    const r = structure(schema, '"HELLO"');
+    const r = shape(schema, '"HELLO"');
     expect(r.ok).toBe(true);
   });
 
   it('fails when string violates email format', () => {
     const schema = { type: 'string', format: 'email' };
-    const r = structure(schema, '"not-email"');
+    const r = shape(schema, '"not-email"');
     expect(r.ok).toBe(false);
     expect(r.errors.join('; ')).toContain('email');
   });
 
   it('passes when string is valid email', () => {
     const schema = { type: 'string', format: 'email' };
-    const r = structure(schema, '"user@example.com"');
+    const r = shape(schema, '"user@example.com"');
     expect(r.ok).toBe(true);
   });
 
   it('fails when array violates minItems', () => {
     const schema = { type: 'array', items: { type: 'integer' }, minItems: 3 };
-    const r = structure(schema, '[1, 2]');
+    const r = shape(schema, '[1, 2]');
     expect(r.ok).toBe(false);
     expect(r.errors.join('; ')).toContain('less than minimum');
   });
@@ -434,7 +434,7 @@ describe('structure() with constraints', () => {
       },
       required: ['name', 'age'],
     };
-    const r = structure(schema, '{"name": "", "age": 200}');
+    const r = shape(schema, '{"name": "", "age": 200}');
     expect(r.ok).toBe(false);
     expect(r.errors.join('; ')).toContain('name');
     expect(r.errors.join('; ')).toContain('age');
@@ -442,21 +442,21 @@ describe('structure() with constraints', () => {
 
   it('constraint errors show in feedback()', () => {
     const schema = { type: 'integer', minimum: 0 };
-    const r = structure(schema, '-5');
+    const r = shape(schema, '-5');
     const fb = r.feedback()!;
     expect(fb).toContain('minimum');
   });
 
   it('can disable constraint validation', () => {
     const schema = { type: 'integer', minimum: 0 };
-    const r = structure(schema, '-5', { validateConstraints: false });
+    const r = shape(schema, '-5', { validateConstraints: false });
     expect(r.ok).toBe(true);
     expect(r.data).toBe(-5);
   });
 
   it('constraints + rules both run', () => {
     const schema = { type: 'integer', minimum: 0 };
-    const r = structure(schema, '5', {
+    const r = shape(schema, '5', {
       rules: [(v) => (v as number) > 10 ? true : 'must be > 10'],
     });
     expect(r.ok).toBe(false);
@@ -466,7 +466,7 @@ describe('structure() with constraints', () => {
   it('constraints fail before rules', () => {
     const schema = { type: 'integer', minimum: 0 };
     let ruleRan = false;
-    const r = structure(schema, '-5', {
+    const r = shape(schema, '-5', {
       rules: [() => { ruleRan = true; return true; }],
     });
     // Rules still run since coercion succeeded — constraints are separate
@@ -476,39 +476,39 @@ describe('structure() with constraints', () => {
 });
 
 // ============================================================================
-// Integration: parser() factory with constraints
+// Integration: shaper() factory with constraints
 // ============================================================================
 
-describe('parser() with constraints', () => {
-  it('validates constraints on each structure call', () => {
-    const p = parser<number>({ type: 'integer', minimum: 0, maximum: 100 });
-    expect(p.structure('50').ok).toBe(true);
-    expect(p.structure('-1').ok).toBe(false);
-    expect(p.structure('101').ok).toBe(false);
+describe('shaper() with constraints', () => {
+  it('validates constraints on each shape call', () => {
+    const p = shaper<number>({ type: 'integer', minimum: 0, maximum: 100 });
+    expect(p.shape('50').ok).toBe(true);
+    expect(p.shape('-1').ok).toBe(false);
+    expect(p.shape('101').ok).toBe(false);
   });
 
   it('validates string format constraints', () => {
-    const p = parser<string>({ type: 'string', format: 'email' });
-    expect(p.structure('"user@example.com"').ok).toBe(true);
-    expect(p.structure('"not-an-email"').ok).toBe(false);
+    const p = shaper<string>({ type: 'string', format: 'email' });
+    expect(p.shape('"user@example.com"').ok).toBe(true);
+    expect(p.shape('"not-an-email"').ok).toBe(false);
   });
 
   it('validates array item constraints', () => {
-    const p = parser<number[]>({
+    const p = shaper<number[]>({
       type: 'array',
       items: { type: 'integer', minimum: 0 },
       minItems: 1,
     });
-    expect(p.structure('[1, 2, 3]').ok).toBe(true);
-    expect(p.structure('[]').ok).toBe(false);
-    expect(p.structure('[1, -1, 3]').ok).toBe(false);
+    expect(p.shape('[1, 2, 3]').ok).toBe(true);
+    expect(p.shape('[]').ok).toBe(false);
+    expect(p.shape('[1, -1, 3]').ok).toBe(false);
   });
 
-  it('parser with constraints disabled', () => {
-    const p = parser<number>(
+  it('shaper with constraints disabled', () => {
+    const p = shaper<number>(
       { type: 'integer', minimum: 0 },
       { validateConstraints: false },
     );
-    expect(p.structure('-5').ok).toBe(true);
+    expect(p.shape('-5').ok).toBe(true);
   });
 });
