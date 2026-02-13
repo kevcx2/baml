@@ -86,7 +86,7 @@ export function zodSchemaToJsonSchema(zodSchema: unknown): Record<string, unknow
   if (!isZodV4Schema(zodSchema)) {
     throw new Error(
       'shapeLM requires Zod v4 or later. The schema you passed appears to be from ' +
-      'an older version of Zod (v3 or earlier). Please upgrade: npm install zod@latest',
+      'an older version of Zod (v3 or earlier). Please upgrade or use a JSON schema.',
     );
   }
 
