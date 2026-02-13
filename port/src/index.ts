@@ -4,8 +4,13 @@
  * Parse and validate arbitrary LLM text into structured data using JSON Schema.
  *
  * Primary API:
- *   - `renderOutputFormat(schema)` — Generate a prompt snippet for LLM output format
- *   - `coerceToSchema(text, schema)` — Parse + validate LLM text against a JSON Schema
+ *   - `parseSchema(text, schema)` — Parse + validate LLM text → ParseResult<T>
+ *   - `prompt(schema)` — Render an output format prompt snippet
+ *   - `parser(schema)` — Factory: bundles schema, exposes .parse() / .prompt()
+ *
+ * Legacy API (still exported):
+ *   - `coerceToSchema(text, schema)` — returns raw CoercionResult
+ *   - `renderOutputFormat(schema)` / `renderOutputFormatFromType(type)`
  */
 
 // ---------------------------------------------------------------------------
@@ -13,12 +18,47 @@
 // ---------------------------------------------------------------------------
 
 export {
+  // New API
+  parseSchema,
+  prompt,
+  parser,
+  type Parser,
+  type ParseSchemaOptions,
+  type ParserOptions,
+  type ValidationRule,
+  type SchemaInput,
+  // Legacy API
   coerceToSchema,
   renderOutputFormat,
   renderOutputFormatFromType,
   type CoerceOptions,
   type RenderOptions,
 } from './api.js';
+
+// ---------------------------------------------------------------------------
+// ParseResult
+// ---------------------------------------------------------------------------
+
+export { ParseResult, ParseResultError } from './parse-result.js';
+export type { Coercion } from './parse-result.js';
+
+// ---------------------------------------------------------------------------
+// Constraints
+// ---------------------------------------------------------------------------
+
+export {
+  extractConstraints,
+  validateConstraints,
+  validateSchemaConstraints,
+} from './constraints.js';
+export type {
+  Constraints,
+  NumericConstraints,
+  StringConstraints,
+  ArrayConstraints,
+  ObjectConstraints,
+  ConstraintViolation,
+} from './constraints.js';
 
 // ---------------------------------------------------------------------------
 // Core types
@@ -55,7 +95,7 @@ export type { Flag } from './flags.js';
 export { flagScore, totalScore } from './flags.js';
 
 // ---------------------------------------------------------------------------
-// Result types
+// Result types (legacy)
 // ---------------------------------------------------------------------------
 
 export type { CoercionResult, ParseError } from './result.js';
@@ -82,3 +122,13 @@ export { parse, type ParseOptions } from './parser/parse.js';
 export { tryCast, coerce } from './coercer/coerce.js';
 export { ParsingContext } from './coercer/context.js';
 export type { CoercedValue } from './coercer/pick-best.js';
+
+// ---------------------------------------------------------------------------
+// Zod support
+// ---------------------------------------------------------------------------
+
+export {
+  isZodSchema,
+  zodSchemaToJsonSchema,
+  normalizeSchema,
+} from './zod-support.js';
