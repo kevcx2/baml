@@ -1,11 +1,12 @@
 /**
- * ParseResult<T> — the user-facing result type.
+ * StructuredResult<T> — the user-facing result type.
  *
  * Wraps the internal CoercionResult with a clean DX:
- *   - .ok / .data / .error  — status + value
+ *   - .ok / .data / .errors — status + value
  *   - .assert()             — throw on failure
  *   - .feedback()           — LLM-readable repair prompt
- *   - .coercions            — list of transformations applied
+ *   - .coercions            — type transformations applied
+ *   - .repairs              — structural fixes applied (JSON repair, markdown extraction)
  *   - .score                — numeric quality score
  */
 
@@ -13,7 +14,7 @@ import type { Flag } from './flags.js';
 import { flagScore } from './flags.js';
 
 // ---------------------------------------------------------------------------
-// Coercion description — user-friendly view of what was transformed
+// Coercion — a type transformation (string→int, object→string, etc.)
 // ---------------------------------------------------------------------------
 
 export interface Coercion {
@@ -26,11 +27,33 @@ export interface Coercion {
 }
 
 // ---------------------------------------------------------------------------
-// ParseResult
+// Repair — a structural fix (JSON repair, markdown extraction, etc.)
 // ---------------------------------------------------------------------------
 
-export class ParseResult<T = unknown> {
-  /** Whether parsing + coercion fully succeeded. */
+export interface Repair {
+  /** Human-readable description of the repair. */
+  message: string;
+  /** Penalty score for this repair. */
+  penalty: number;
+}
+
+// ---------------------------------------------------------------------------
+// Flag classification
+// ---------------------------------------------------------------------------
+
+/** Flags that represent structural repairs (not type coercions). */
+const REPAIR_FLAGS = new Set([
+  'object-from-markdown',
+  'object-from-fixed-json',
+  'inferred-object',
+]);
+
+// ---------------------------------------------------------------------------
+// StructuredResult
+// ---------------------------------------------------------------------------
+
+export class StructuredResult<T = unknown> {
+  /** Whether parsing + coercion + validation fully succeeded. */
   readonly ok: boolean;
 
   /**
@@ -40,9 +63,9 @@ export class ParseResult<T = unknown> {
   readonly data: T | undefined;
 
   /**
-   * Error message when `ok` is false. undefined when `ok` is true.
+   * Error messages. Empty array when `ok` is true.
    */
-  readonly error: string | undefined;
+  readonly errors: string[];
 
   /**
    * Aggregate quality score (0 = perfect match, higher = more coercion).
@@ -50,9 +73,14 @@ export class ParseResult<T = unknown> {
   readonly score: number;
 
   /**
-   * Every transformation applied during coercion, as user-friendly objects.
+   * Type transformations applied during coercion (string→int, etc.).
    */
   readonly coercions: Coercion[];
+
+  /**
+   * Structural repairs applied (JSON fix, markdown extraction, etc.).
+   */
+  readonly repairs: Repair[];
 
   /**
    * Raw flags from the coercion engine (for advanced introspection).
@@ -73,7 +101,7 @@ export class ParseResult<T = unknown> {
   constructor(opts: {
     ok: boolean;
     data: T | undefined;
-    error: string | undefined;
+    errors: string[];
     score: number;
     flags: Flag[];
     raw: string;
@@ -81,12 +109,15 @@ export class ParseResult<T = unknown> {
   }) {
     this.ok = opts.ok;
     this.data = opts.data;
-    this.error = opts.error;
+    this.errors = opts.errors;
     this.score = opts.score;
     this.flags = opts.flags;
     this.raw = opts.raw;
     this._outputFormat = opts.outputFormat;
-    this.coercions = flagsToCoercions(opts.flags);
+
+    const { coercions, repairs } = classifyFlags(opts.flags);
+    this.coercions = coercions;
+    this.repairs = repairs;
   }
 
   /**
@@ -96,8 +127,10 @@ export class ParseResult<T = unknown> {
    */
   assert(): T {
     if (!this.ok || this.data === undefined) {
-      throw new ParseResultError(
-        this.error ?? 'Parse failed with no error message',
+      throw new StructuredResultError(
+        this.errors.length > 0
+          ? this.errors.join('; ')
+          : 'Structuring failed with no error message',
         this,
       );
     }
@@ -118,14 +151,19 @@ export class ParseResult<T = unknown> {
     const sections: string[] = [];
 
     // Section 1: What went wrong
-    if (!this.ok && this.error) {
-      sections.push(`Error: ${this.error}`);
+    if (!this.ok && this.errors.length > 0) {
+      for (const e of this.errors) {
+        sections.push(`Error: ${e}`);
+      }
     }
 
-    if (this.coercions.length > 0) {
+    const allTransforms = [...this.repairs, ...this.coercions];
+    if (allTransforms.length > 0) {
       sections.push('The following corrections were needed:');
-      for (const c of this.coercions) {
-        const path = c.path ? ` at "${c.path}"` : '';
+      for (const c of allTransforms) {
+        const path = 'path' in c && (c as Coercion).path
+          ? ` at "${(c as Coercion).path}"`
+          : '';
         sections.push(`  - ${c.message}${path}`);
       }
     }
@@ -146,114 +184,113 @@ export class ParseResult<T = unknown> {
 }
 
 // ---------------------------------------------------------------------------
-// ParseResultError — thrown by .assert()
+// StructuredResultError — thrown by .assert()
 // ---------------------------------------------------------------------------
 
-export class ParseResultError extends Error {
-  readonly result: ParseResult;
+export class StructuredResultError extends Error {
+  readonly result: StructuredResult;
 
-  constructor(message: string, result: ParseResult) {
+  constructor(message: string, result: StructuredResult) {
     super(message);
-    this.name = 'ParseResultError';
+    this.name = 'StructuredResultError';
     this.result = result;
   }
 }
 
 // ---------------------------------------------------------------------------
-// Flag → Coercion mapping
+// Flag → Coercion / Repair classification
 // ---------------------------------------------------------------------------
 
-function flagsToCoercions(flags: Flag[]): Coercion[] {
-  return flags.map(flagToCoercion);
+function classifyFlags(flags: Flag[]): {
+  coercions: Coercion[];
+  repairs: Repair[];
+} {
+  const coercions: Coercion[] = [];
+  const repairs: Repair[] = [];
+
+  for (const flag of flags) {
+    const penalty = flagScore(flag);
+
+    if (REPAIR_FLAGS.has(flag.kind)) {
+      repairs.push({ message: flagMessage(flag), penalty });
+    } else {
+      coercions.push({ path: flagPath(flag), message: flagMessage(flag), penalty });
+    }
+  }
+
+  return { coercions, repairs };
 }
 
-function flagToCoercion(flag: Flag): Coercion {
-  const penalty = flagScore(flag);
+function flagPath(flag: Flag): string {
+  switch (flag.kind) {
+    case 'array-item-parse-error':
+      return `[${flag.index}]`;
+    case 'map-key-parse-error':
+      return `[key ${flag.index}]`;
+    case 'map-value-parse-error':
+      return flag.key;
+    default:
+      return '';
+  }
+}
 
+function flagMessage(flag: Flag): string {
   switch (flag.kind) {
     case 'object-from-markdown':
-      return { path: '', message: 'Extracted JSON from markdown code block', penalty };
+      return 'Extracted JSON from markdown code block';
     case 'object-from-fixed-json':
-      return {
-        path: '',
-        message: `Repaired malformed JSON (fixes: ${flag.fixes.join(', ')})`,
-        penalty,
-      };
-    case 'default-but-had-unparseable-value':
-      return { path: '', message: `Used default: ${flag.reason}`, penalty };
-    case 'object-to-string':
-      return { path: '', message: 'Converted object to string', penalty };
-    case 'object-to-primitive':
-      return { path: '', message: 'Converted object to primitive', penalty };
-    case 'object-to-map':
-      return { path: '', message: 'Converted typed object to map', penalty };
-    case 'extra-key':
-      return { path: '', message: `Ignored extra key "${flag.key}"`, penalty };
-    case 'stripped-non-alphanumeric':
-      return {
-        path: '',
-        message: `Stripped non-alphanumeric characters from "${flag.original}"`,
-        penalty,
-      };
-    case 'substring-match':
-      return {
-        path: '',
-        message: `Matched substring "${flag.original}" to enum value`,
-        penalty,
-      };
-    case 'single-to-array':
-      return { path: '', message: 'Wrapped single value into array', penalty };
-    case 'array-item-parse-error':
-      return {
-        path: `[${flag.index}]`,
-        message: `Array item parse error: ${flag.reason}`,
-        penalty,
-      };
-    case 'map-key-parse-error':
-      return {
-        path: `[key ${flag.index}]`,
-        message: `Map key parse error: ${flag.reason}`,
-        penalty,
-      };
-    case 'map-value-parse-error':
-      return {
-        path: flag.key,
-        message: `Map value parse error: ${flag.reason}`,
-        penalty,
-      };
-    case 'json-to-string':
-      return { path: '', message: 'Serialized JSON value to string', penalty };
-    case 'implied-key':
-      return { path: '', message: `Inferred object key "${flag.key}"`, penalty };
+      return `Repaired malformed JSON (fixes: ${flag.fixes.join(', ')})`;
     case 'inferred-object':
-      return { path: '', message: 'Inferred object structure', penalty };
+      return 'Inferred object structure';
+    case 'default-but-had-unparseable-value':
+      return `Used default: ${flag.reason}`;
+    case 'object-to-string':
+      return 'Converted object to string';
+    case 'object-to-primitive':
+      return 'Converted object to primitive';
+    case 'object-to-map':
+      return 'Converted typed object to map';
+    case 'extra-key':
+      return `Ignored extra key "${flag.key}"`;
+    case 'stripped-non-alphanumeric':
+      return `Stripped non-alphanumeric characters from "${flag.original}"`;
+    case 'substring-match':
+      return `Matched substring "${flag.original}" to enum value`;
+    case 'single-to-array':
+      return 'Wrapped single value into array';
+    case 'array-item-parse-error':
+      return `Array item parse error: ${flag.reason}`;
+    case 'map-key-parse-error':
+      return `Map key parse error: ${flag.reason}`;
+    case 'map-value-parse-error':
+      return `Map value parse error: ${flag.reason}`;
+    case 'json-to-string':
+      return 'Serialized JSON value to string';
+    case 'implied-key':
+      return `Inferred object key "${flag.key}"`;
     case 'first-match':
-      return { path: '', message: `Picked first match (index ${flag.index})`, penalty };
+      return `Picked first match (index ${flag.index})`;
     case 'union-match':
-      return { path: '', message: `Matched union variant ${flag.index}`, penalty };
+      return `Matched union variant ${flag.index}`;
     case 'str-match-one-from-many':
-      return {
-        path: '',
-        message: `Ambiguous string matched from ${flag.matches.length} candidates`,
-        penalty,
-      };
+      return `Ambiguous string matched from ${flag.matches.length} candidates`;
     case 'default-from-no-value':
-      return { path: '', message: 'Used default value (required field missing)', penalty };
+      return 'Used default value (required field missing)';
     case 'default-but-had-value':
-      return { path: '', message: 'Used default (could not parse provided value)', penalty };
+      return 'Used default (could not parse provided value)';
     case 'optional-default-from-no-value':
-      return { path: '', message: 'Used null for missing optional field', penalty };
+      return 'Used null for missing optional field';
     case 'string-to-bool':
-      return { path: '', message: `Converted "${flag.original}" to boolean`, penalty };
+      return `Converted "${flag.original}" to boolean`;
     case 'string-to-null':
-      return { path: '', message: `Converted "${flag.original}" to null`, penalty };
+      return `Converted "${flag.original}" to null`;
     case 'string-to-char':
-      return { path: '', message: `Converted "${flag.original}" to char`, penalty };
+      return `Converted "${flag.original}" to char`;
     case 'string-to-float':
-      return { path: '', message: `Converted "${flag.original}" to number`, penalty };
+      return `Converted "${flag.original}" to number`;
     case 'float-to-int':
-      return { path: '', message: `Rounded ${flag.original} to integer`, penalty };
+      return `Rounded ${flag.original} to integer`;
     case 'no-fields':
-      return { path: '', message: 'Object has no fields', penalty };
+      return 'Object has no fields';
   }
 }

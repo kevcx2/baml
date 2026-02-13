@@ -5,11 +5,9 @@
  * On each .feed(chunk), the accumulated text is re-parsed and coerced,
  * producing a partial result (DeepPartial<T>).
  *
- * Design:
- *   - Accumulates raw text chunks
- *   - On each feed(), runs the full parse+coerce pipeline on accumulated text
- *   - Returns StreamResult with partial data that converges toward final shape
- *   - .done() performs final validation (constraints + rules) and returns ParseResult<T>
+ * API:
+ *   - .feed(chunk)  → { partial } — latest best-effort data
+ *   - .close()      → StructuredResult<T> — final validated result
  */
 
 import { parse as structuralParse, type ParseOptions } from './parser/parse.js';
@@ -18,7 +16,7 @@ import { ParsingContext } from './coercer/context.js';
 import { totalScore } from './flags.js';
 import type { Flag } from './flags.js';
 import type { FieldType as FieldTypeT } from './types.js';
-import { ParseResult } from './parse-result.js';
+import { StructuredResult } from './parse-result.js';
 import { validateSchemaConstraints } from './constraints.js';
 import type { ValidationRule } from './api.js';
 
@@ -42,7 +40,7 @@ export type DeepPartial<T> = T extends (infer U)[]
 
 export interface StreamResult<T = unknown> {
   /** The partially-coerced value so far. May be incomplete. */
-  data: DeepPartial<T> | undefined;
+  partial: DeepPartial<T> | undefined;
 
   /** Whether parsing produced any usable data. */
   hasData: boolean;
@@ -64,16 +62,16 @@ export interface StreamResult<T = unknown> {
 export interface StreamParserOptions {
   /** Options for the structural parser. */
   parse?: ParseOptions;
-  /** Custom validation rules (only run on .done()). */
+  /** Custom validation rules (only run on .close()). */
   rules?: ValidationRule[];
-  /** Whether to validate constraints (only on .done()). Default: true. */
+  /** Whether to validate constraints (only on .close()). Default: true. */
   validateConstraints?: boolean;
 }
 
 export class StreamParser<T = unknown> {
   private accumulated = '';
   private lastResult: StreamResult<T> = {
-    data: undefined,
+    partial: undefined,
     hasData: false,
     raw: '',
     score: Infinity,
@@ -87,7 +85,7 @@ export class StreamParser<T = unknown> {
   private readonly parseOptions: ParseOptions | undefined;
   private readonly rules: ValidationRule[];
   private readonly shouldValidateConstraints: boolean;
-  private isDone = false;
+  private isClosed = false;
 
   constructor(opts: {
     targetType: FieldTypeT;
@@ -110,12 +108,12 @@ export class StreamParser<T = unknown> {
   /**
    * Feed a chunk of text from the LLM stream.
    *
-   * Returns the current partial parse result. The result improves as more
-   * text is accumulated.
+   * Returns the current partial parse result. The .partial field improves
+   * as more text is accumulated.
    */
   feed(chunk: string): StreamResult<T> {
-    if (this.isDone) {
-      throw new Error('StreamParser.feed() called after done()');
+    if (this.isClosed) {
+      throw new Error('StreamParser.feed() called after close()');
     }
 
     this.accumulated += chunk;
@@ -129,7 +127,7 @@ export class StreamParser<T = unknown> {
       if (result !== null) {
         const score = totalScore(result.flags);
         this.lastResult = {
-          data: result.value as DeepPartial<T>,
+          partial: result.value as DeepPartial<T>,
           hasData: true,
           raw: this.accumulated,
           score,
@@ -142,8 +140,7 @@ export class StreamParser<T = unknown> {
         };
       }
     } catch {
-      // Parse failed on partial text — that's expected during streaming.
-      // Keep the last successful result.
+      // Parse failed on partial text — expected during streaming.
       this.lastResult = {
         ...this.lastResult,
         raw: this.accumulated,
@@ -168,16 +165,16 @@ export class StreamParser<T = unknown> {
   }
 
   /**
-   * Finalize the stream and return a full ParseResult<T>.
+   * Finalize the stream and return a full StructuredResult<T>.
    *
    * Runs constraint validation and custom rules on the final value.
-   * After calling done(), no more feed() calls are allowed.
+   * After calling close(), no more feed() calls are allowed.
    */
-  done(): ParseResult<T> {
-    if (this.isDone) {
-      throw new Error('StreamParser.done() called more than once');
+  close(): StructuredResult<T> {
+    if (this.isClosed) {
+      throw new Error('StreamParser.close() called more than once');
     }
-    this.isDone = true;
+    this.isClosed = true;
 
     // Final parse on complete accumulated text
     const parsed = structuralParse(this.accumulated, this.parseOptions);
@@ -185,10 +182,10 @@ export class StreamParser<T = unknown> {
     const result = coerce(parsed, this.targetType, ctx);
 
     if (result === null) {
-      return new ParseResult<T>({
+      return new StructuredResult<T>({
         ok: false,
         data: undefined,
-        error: 'Failed to coerce value to target type',
+        errors: ['Failed to coerce value to target type'],
         score: Infinity,
         flags: [],
         raw: this.accumulated,
@@ -218,12 +215,11 @@ export class StreamParser<T = unknown> {
 
     const allErrors = [...constraintErrors, ...ruleErrors];
     const ok = allErrors.length === 0;
-    const errorMessage = allErrors.length > 0 ? allErrors.join('; ') : undefined;
 
-    return new ParseResult<T>({
+    return new StructuredResult<T>({
       ok,
       data: result.value as T | undefined,
-      error: errorMessage,
+      errors: allErrors,
       score,
       flags: result.flags,
       raw: this.accumulated,

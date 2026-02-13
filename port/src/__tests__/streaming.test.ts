@@ -7,7 +7,7 @@ import {
   parser,
   stream,
   StreamParser,
-  ParseResult,
+  StructuredResult,
 } from '../index.js';
 
 // ---------------------------------------------------------------------------
@@ -77,56 +77,56 @@ describe('parser().stream()', () => {
     s.feed(', "age": 30}');
     const r2 = s.current();
     expect(r2.hasData).toBe(true);
-    expect((r2.data as any)?.name).toBe('Alice');
-    expect((r2.data as any)?.age).toBe(30);
+    expect((r2.partial as any)?.name).toBe('Alice');
+    expect((r2.partial as any)?.age).toBe(30);
   });
 
-  it('done() returns ParseResult', () => {
+  it('close() returns StructuredResult', () => {
     const p = parser<{ name: string; age: number }>(PERSON_SCHEMA);
     const s = p.stream();
     s.feed('{"name": "Alice", "age": 30}');
-    const r = s.done();
-    expect(r).toBeInstanceOf(ParseResult);
+    const r = s.close();
+    expect(r).toBeInstanceOf(StructuredResult);
     expect(r.ok).toBe(true);
     expect(r.data?.name).toBe('Alice');
     expect(r.data?.age).toBe(30);
   });
 
-  it('done() runs constraint validation', () => {
+  it('close() runs constraint validation', () => {
     const schema = { type: 'integer', minimum: 0 } as const;
     const p = parser<number>(schema);
     const s = p.stream();
     s.feed('-5');
-    const r = s.done();
+    const r = s.close();
     expect(r.ok).toBe(false);
-    expect(r.error).toContain('minimum');
+    expect(r.errors.join('; ')).toContain('minimum');
   });
 
-  it('done() runs custom rules', () => {
+  it('close() runs custom rules', () => {
     const p = parser<number>(INT_SCHEMA, {
       rules: [(v) => (v as number) > 0 ? true : 'must be positive'],
     });
     const s = p.stream();
     s.feed('-5');
-    const r = s.done();
+    const r = s.close();
     expect(r.ok).toBe(false);
-    expect(r.error).toContain('must be positive');
+    expect(r.errors.join('; ')).toContain('must be positive');
   });
 
-  it('throws if feed() called after done()', () => {
+  it('throws if feed() called after close()', () => {
     const p = parser(PERSON_SCHEMA);
     const s = p.stream();
     s.feed('{"name": "Alice", "age": 30}');
-    s.done();
-    expect(() => s.feed('more')).toThrow('done()');
+    s.close();
+    expect(() => s.feed('more')).toThrow('close()');
   });
 
-  it('throws if done() called twice', () => {
+  it('throws if close() called twice', () => {
     const p = parser(PERSON_SCHEMA);
     const s = p.stream();
     s.feed('{"name": "Alice", "age": 30}');
-    s.done();
-    expect(() => s.done()).toThrow('done()');
+    s.close();
+    expect(() => s.close()).toThrow('close()');
   });
 
   it('current() returns last successful result', () => {
@@ -135,7 +135,7 @@ describe('parser().stream()', () => {
     s.feed('{"name": "Alice", "age": 30}');
     const r = s.current();
     expect(r.hasData).toBe(true);
-    expect((r.data as any)?.name).toBe('Alice');
+    expect((r.partial as any)?.name).toBe('Alice');
   });
 
   it('text() returns accumulated raw text', () => {
@@ -160,7 +160,7 @@ describe('stream()', () => {
   it('works end-to-end', () => {
     const s = stream<{ name: string; age: number }>(PERSON_SCHEMA);
     s.feed('{"name": "Bob", "age": 25}');
-    const r = s.done();
+    const r = s.close();
     expect(r.ok).toBe(true);
     expect(r.data?.name).toBe('Bob');
   });
@@ -180,7 +180,7 @@ describe('Simulated streaming scenarios', () => {
       s.feed(token);
     }
 
-    const r = s.done();
+    const r = s.close();
     expect(r.ok).toBe(true);
     expect(r.data?.name).toBe('Alice');
     expect(r.data?.age).toBe(30);
@@ -196,7 +196,7 @@ describe('Simulated streaming scenarios', () => {
     s.feed(', "age": 35}\n');
     s.feed('```');
 
-    const r = s.done();
+    const r = s.close();
     expect(r.ok).toBe(true);
     expect(r.data?.name).toBe('Charlie');
     expect(r.data?.age).toBe(35);
@@ -210,7 +210,7 @@ describe('Simulated streaming scenarios', () => {
     s.feed('the person is: ');
     s.feed('{"name": "Dave", "age": 40}');
 
-    const r = s.done();
+    const r = s.close();
     expect(r.ok).toBe(true);
     expect(r.data?.name).toBe('Dave');
   });
@@ -222,7 +222,7 @@ describe('Simulated streaming scenarios', () => {
     s.feed('Hello');
     s.feed(' World');
 
-    const r = s.done();
+    const r = s.close();
     expect(r.ok).toBe(true);
     expect(r.data).toBe('Hello World');
   });
@@ -234,7 +234,7 @@ describe('Simulated streaming scenarios', () => {
     s.feed('4');
     s.feed('2');
 
-    const r = s.done();
+    const r = s.close();
     expect(r.ok).toBe(true);
     expect(r.data).toBe(42);
   });
@@ -250,7 +250,7 @@ describe('Simulated streaming scenarios', () => {
 
     s.feed(', {"name": "B", "age": 2}]');
 
-    const r = s.done();
+    const r = s.close();
     expect(r.ok).toBe(true);
     expect(r.data).toHaveLength(2);
     expect(r.data?.[0].name).toBe('A');
@@ -261,7 +261,7 @@ describe('Simulated streaming scenarios', () => {
     const p = parser<string>(STRING_SCHEMA);
     const s = p.stream();
     // No feed calls
-    const r = s.done();
+    const r = s.close();
     expect(r.ok).toBe(true);
     expect(r.data).toBe('');
   });
@@ -277,8 +277,8 @@ describe('Simulated streaming scenarios', () => {
     const r2 = s.feed(', "age": 28}');
     // Now we should have complete data
     expect(r2.hasData).toBe(true);
-    expect((r2.data as any)?.name).toBe('Eve');
-    expect((r2.data as any)?.age).toBe(28);
+    expect((r2.partial as any)?.name).toBe('Eve');
+    expect((r2.partial as any)?.age).toBe(28);
   });
 });
 
@@ -287,7 +287,7 @@ describe('Simulated streaming scenarios', () => {
 // ============================================================================
 
 describe('Streaming with constraints and rules', () => {
-  it('constraints are validated on done() only', () => {
+  it('constraints are validated on close() only', () => {
     const schema = {
       type: 'object',
       properties: {
@@ -306,22 +306,22 @@ describe('Streaming with constraints and rules', () => {
     const partial = s.current();
     // (partial.hasData may be true but constraints aren't checked)
 
-    // done() checks constraints
-    const r = s.done();
+    // close() checks constraints
+    const r = s.close();
     expect(r.ok).toBe(false);
-    expect(r.error).toBeDefined();
+    expect(r.errors).toBeDefined();
   });
 
-  it('rules are applied on done() only', () => {
+  it('rules are applied on close() only', () => {
     const p = parser<number>(INT_SCHEMA, {
       rules: [(v) => (v as number) % 2 === 0 ? true : 'must be even'],
     });
     const s = p.stream();
     s.feed('3');
 
-    const r = s.done();
+    const r = s.close();
     expect(r.ok).toBe(false);
-    expect(r.error).toContain('must be even');
+    expect(r.errors.join('; ')).toContain('must be even');
   });
 
   it('stream-level rules override parser rules', () => {
@@ -333,9 +333,9 @@ describe('Streaming with constraints and rules', () => {
     });
     s.feed('5');
 
-    const r = s.done();
+    const r = s.close();
     expect(r.ok).toBe(false);
-    expect(r.error).toContain('stream: must be > 10');
+    expect(r.errors.join('; ')).toContain('stream: must be > 10');
   });
 
   it('can disable constraints on stream', () => {
@@ -344,7 +344,7 @@ describe('Streaming with constraints and rules', () => {
     const s = p.stream({ validateConstraints: false });
     s.feed('-5');
 
-    const r = s.done();
+    const r = s.close();
     expect(r.ok).toBe(true);
     expect(r.data).toBe(-5);
   });

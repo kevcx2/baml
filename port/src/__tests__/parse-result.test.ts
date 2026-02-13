@@ -1,14 +1,14 @@
 /**
- * Tests for Phase 1: ParseResult, parseSchema(), prompt(), parser(), .assert(), .feedback()
+ * Tests for Phase 1: StructuredResult, structure(), prompt(), parser(), .assert(), .feedback()
  */
 
 import { describe, it, expect } from 'vitest';
 import {
-  parseSchema,
+  structure,
   prompt,
   parser,
-  ParseResult,
-  ParseResultError,
+  StructuredResult,
+  StructuredResultError,
 } from '../index.js';
 
 // ---------------------------------------------------------------------------
@@ -39,33 +39,33 @@ const INT_LIST_SCHEMA = {
 };
 
 // ============================================================================
-// parseSchema() — one-shot API
+// structure() — one-shot API
 // ============================================================================
 
-describe('parseSchema()', () => {
-  it('returns ParseResult instance', () => {
-    const r = parseSchema('"hello"', STRING_SCHEMA);
-    expect(r).toBeInstanceOf(ParseResult);
+describe('structure()', () => {
+  it('returns StructuredResult instance', () => {
+    const r = structure(STRING_SCHEMA, '"hello"');
+    expect(r).toBeInstanceOf(StructuredResult);
   });
 
   it('successful string parse', () => {
-    const r = parseSchema('"hello"', STRING_SCHEMA);
+    const r = structure(STRING_SCHEMA, '"hello"');
     expect(r.ok).toBe(true);
     expect(r.data).toBe('hello');
-    expect(r.error).toBeUndefined();
+    expect(r.errors).toHaveLength(0);
     expect(r.score).toBe(0);
   });
 
   it('successful integer parse', () => {
-    const r = parseSchema('42', INT_SCHEMA);
+    const r = structure(INT_SCHEMA, '42');
     expect(r.ok).toBe(true);
     expect(r.data).toBe(42);
   });
 
   it('successful object parse', () => {
-    const r = parseSchema<{ name: string; age: number }>(
-      '{"name": "Alice", "age": 30}',
+    const r = structure<{ name: string; age: number }>(
       PERSON_SCHEMA,
+      '{"name": "Alice", "age": 30}',
     );
     expect(r.ok).toBe(true);
     expect(r.data?.name).toBe('Alice');
@@ -73,7 +73,7 @@ describe('parseSchema()', () => {
   });
 
   it('coercion: string-to-int increases score', () => {
-    const r = parseSchema('{"name": "Alice", "age": "30"}', PERSON_SCHEMA);
+    const r = structure(PERSON_SCHEMA, '{"name": "Alice", "age": "30"}');
     expect(r.ok).toBe(true);
     expect(r.score).toBeGreaterThan(0);
     expect(r.coercions.length).toBeGreaterThan(0);
@@ -81,31 +81,31 @@ describe('parseSchema()', () => {
 
   it('preserves raw text', () => {
     const raw = '{"name": "Alice", "age": 30}';
-    const r = parseSchema(raw, PERSON_SCHEMA);
+    const r = structure(PERSON_SCHEMA, raw);
     expect(r.raw).toBe(raw);
   });
 
   it('object from markdown', () => {
     const text = `Here is the person:\n\`\`\`json\n{"name": "Bob", "age": 25}\n\`\`\``;
-    const r = parseSchema<{ name: string; age: number }>(text, PERSON_SCHEMA);
+    const r = structure<{ name: string; age: number }>(PERSON_SCHEMA, text);
     expect(r.ok).toBe(true);
     expect(r.data?.name).toBe('Bob');
   });
 
   it('enum parse', () => {
-    const r = parseSchema('"RED"', COLOR_ENUM_SCHEMA);
+    const r = structure(COLOR_ENUM_SCHEMA, '"RED"');
     expect(r.ok).toBe(true);
     expect(r.data).toBe('RED');
   });
 
   it('array parse', () => {
-    const r = parseSchema<number[]>('[1, 2, 3]', INT_LIST_SCHEMA);
+    const r = structure<number[]>(INT_LIST_SCHEMA, '[1, 2, 3]');
     expect(r.ok).toBe(true);
     expect(r.data).toEqual([1, 2, 3]);
   });
 
   it('has coercions for imperfect parse', () => {
-    const r = parseSchema('{"name": "Alice", "age": "30", "extra": true}', PERSON_SCHEMA);
+    const r = structure(PERSON_SCHEMA, '{"name": "Alice", "age": "30", "extra": true}');
     expect(r.ok).toBe(true);
     expect(r.coercions.length).toBeGreaterThan(0);
     // Should have both extra-key and string-to-float/int coercion
@@ -113,46 +113,46 @@ describe('parseSchema()', () => {
   });
 
   it('flags are present on result', () => {
-    const r = parseSchema('{"name": "Alice", "age": "30"}', PERSON_SCHEMA);
+    const r = structure(PERSON_SCHEMA, '{"name": "Alice", "age": "30"}');
     expect(r.flags.length).toBeGreaterThan(0);
   });
 });
 
 // ============================================================================
-// ParseResult.assert()
+// StructuredResult.assert()
 // ============================================================================
 
-describe('ParseResult.assert()', () => {
+describe('StructuredResult.assert()', () => {
   it('returns data on success', () => {
-    const r = parseSchema<string>('"hello"', STRING_SCHEMA);
+    const r = structure<string>(STRING_SCHEMA, '"hello"');
     expect(r.assert()).toBe('hello');
   });
 
   it('returns typed data on success', () => {
-    const r = parseSchema<{ name: string; age: number }>(
-      '{"name": "Alice", "age": 30}',
+    const r = structure<{ name: string; age: number }>(
       PERSON_SCHEMA,
+      '{"name": "Alice", "age": 30}',
     );
     const data = r.assert();
     expect(data.name).toBe('Alice');
     expect(data.age).toBe(30);
   });
 
-  it('throws ParseResultError on failure', () => {
+  it('throws StructuredResultError on failure', () => {
     // Create a result that fails: a completely unmatchable schema
     // We need a schema where coercion genuinely fails
     const strictBoolSchema = { type: 'boolean' };
-    const r = parseSchema('not-a-bool-at-all', strictBoolSchema);
+    const r = structure(strictBoolSchema, 'not-a-bool-at-all');
     // Bool coercion may still succeed for some strings,
     // so let's use a more definitive test
     if (!r.ok) {
-      expect(() => r.assert()).toThrow(ParseResultError);
+      expect(() => r.assert()).toThrow(StructuredResultError);
     }
   });
 
   it('thrown error has result reference', () => {
     // Force a failure by using rules
-    const r = parseSchema('"hello"', STRING_SCHEMA, {
+    const r = structure(STRING_SCHEMA, '"hello"', {
       rules: [() => 'forced failure'],
     });
     expect(r.ok).toBe(false);
@@ -160,43 +160,43 @@ describe('ParseResult.assert()', () => {
       r.assert();
       expect.fail('should have thrown');
     } catch (e) {
-      expect(e).toBeInstanceOf(ParseResultError);
-      expect((e as ParseResultError).result).toBe(r);
+      expect(e).toBeInstanceOf(StructuredResultError);
+      expect((e as StructuredResultError).result).toBe(r);
     }
   });
 });
 
 // ============================================================================
-// ParseResult.feedback()
+// StructuredResult.feedback()
 // ============================================================================
 
-describe('ParseResult.feedback()', () => {
+describe('StructuredResult.feedback()', () => {
   it('returns undefined for perfect parse', () => {
-    const r = parseSchema('"hello"', STRING_SCHEMA);
+    const r = structure(STRING_SCHEMA, '"hello"');
     expect(r.feedback()).toBeUndefined();
   });
 
   it('returns string for imperfect parse', () => {
-    const r = parseSchema('{"name": "Alice", "age": "30"}', PERSON_SCHEMA);
+    const r = structure(PERSON_SCHEMA, '{"name": "Alice", "age": "30"}');
     const fb = r.feedback();
     expect(fb).toBeDefined();
     expect(typeof fb).toBe('string');
   });
 
   it('includes coercion descriptions in feedback', () => {
-    const r = parseSchema('{"name": "Alice", "age": "30", "extra": true}', PERSON_SCHEMA);
+    const r = structure(PERSON_SCHEMA, '{"name": "Alice", "age": "30", "extra": true}');
     const fb = r.feedback()!;
     expect(fb).toContain('corrections were needed');
   });
 
   it('includes output format in feedback', () => {
-    const r = parseSchema('{"name": "Alice", "age": "30"}', PERSON_SCHEMA);
+    const r = structure(PERSON_SCHEMA, '{"name": "Alice", "age": "30"}');
     const fb = r.feedback()!;
     expect(fb).toContain('Please respond using exactly this format');
   });
 
   it('includes error message for failed parses with rules', () => {
-    const r = parseSchema('"hello"', STRING_SCHEMA, {
+    const r = structure(STRING_SCHEMA, '"hello"', {
       rules: [() => 'Name must be at least 5 characters'],
     });
     const fb = r.feedback()!;
@@ -243,22 +243,22 @@ describe('parser()', () => {
   it('creates a parser object', () => {
     const p = parser(PERSON_SCHEMA);
     expect(p).toBeDefined();
-    expect(typeof p.parse).toBe('function');
+    expect(typeof p.structure).toBe('function');
     expect(typeof p.prompt).toBe('function');
     expect(p.schema).toBe(PERSON_SCHEMA);
   });
 
-  it('.parse() returns ParseResult', () => {
+  it('.structure() returns StructuredResult', () => {
     const p = parser(PERSON_SCHEMA);
-    const r = p.parse('{"name": "Alice", "age": 30}');
-    expect(r).toBeInstanceOf(ParseResult);
+    const r = p.structure('{"name": "Alice", "age": 30}');
+    expect(r).toBeInstanceOf(StructuredResult);
     expect(r.ok).toBe(true);
     expect((r.data as any).name).toBe('Alice');
   });
 
-  it('.parse() is typed', () => {
+  it('.structure() is typed', () => {
     const p = parser<{ name: string; age: number }>(PERSON_SCHEMA);
-    const r = p.parse('{"name": "Alice", "age": 30}');
+    const r = p.structure('{"name": "Alice", "age": 30}');
     expect(r.data?.name).toBe('Alice');
     expect(r.data?.age).toBe(30);
   });
@@ -274,29 +274,29 @@ describe('parser()', () => {
 
   it('parser is reusable', () => {
     const p = parser<{ name: string; age: number }>(PERSON_SCHEMA);
-    const r1 = p.parse('{"name": "Alice", "age": 30}');
-    const r2 = p.parse('{"name": "Bob", "age": 25}');
+    const r1 = p.structure('{"name": "Alice", "age": 30}');
+    const r2 = p.structure('{"name": "Bob", "age": 25}');
     expect(r1.data?.name).toBe('Alice');
     expect(r2.data?.name).toBe('Bob');
   });
 
   it('parser handles malformed JSON', () => {
     const p = parser(PERSON_SCHEMA);
-    const r = p.parse('{name: "Alice", age: 30}');
+    const r = p.structure('{name: "Alice", age: 30}');
     expect(r.ok).toBe(true);
     expect((r.data as any).name).toBe('Alice');
   });
 
   it('parser handles markdown', () => {
     const p = parser(PERSON_SCHEMA);
-    const r = p.parse('```json\n{"name": "Alice", "age": 30}\n```');
+    const r = p.structure('```json\n{"name": "Alice", "age": 30}\n```');
     expect(r.ok).toBe(true);
     expect((r.data as any).name).toBe('Alice');
   });
 
-  it('.parse().feedback() includes the schema prompt', () => {
+  it('.structure().feedback() includes the schema prompt', () => {
     const p = parser(PERSON_SCHEMA);
-    const r = p.parse('{"name": "Alice", "age": "30"}');
+    const r = p.structure('{"name": "Alice", "age": "30"}');
     const fb = r.feedback()!;
     expect(fb).toContain('name');
   });
@@ -308,81 +308,81 @@ describe('parser()', () => {
 
 describe('Custom validation rules', () => {
   it('rule returning true passes', () => {
-    const r = parseSchema('"hello"', STRING_SCHEMA, {
+    const r = structure(STRING_SCHEMA, '"hello"', {
       rules: [() => true],
     });
     expect(r.ok).toBe(true);
   });
 
   it('rule returning undefined passes', () => {
-    const r = parseSchema('"hello"', STRING_SCHEMA, {
+    const r = structure(STRING_SCHEMA, '"hello"', {
       rules: [() => undefined],
     });
     expect(r.ok).toBe(true);
   });
 
   it('rule returning null passes', () => {
-    const r = parseSchema('"hello"', STRING_SCHEMA, {
+    const r = structure(STRING_SCHEMA, '"hello"', {
       rules: [() => null],
     });
     expect(r.ok).toBe(true);
   });
 
   it('rule returning string fails', () => {
-    const r = parseSchema('"hello"', STRING_SCHEMA, {
+    const r = structure(STRING_SCHEMA, '"hello"', {
       rules: [() => 'value must be "world"'],
     });
     expect(r.ok).toBe(false);
-    expect(r.error).toContain('value must be "world"');
+    expect(r.errors.join('; ')).toContain('value must be "world"');
   });
 
   it('multiple rules: all pass', () => {
-    const r = parseSchema('"hello"', STRING_SCHEMA, {
+    const r = structure(STRING_SCHEMA, '"hello"', {
       rules: [() => true, () => true],
     });
     expect(r.ok).toBe(true);
   });
 
   it('multiple rules: first fails', () => {
-    const r = parseSchema('"hello"', STRING_SCHEMA, {
+    const r = structure(STRING_SCHEMA, '"hello"', {
       rules: [() => 'fail1', () => true],
     });
     expect(r.ok).toBe(false);
-    expect(r.error).toContain('fail1');
+    expect(r.errors.some(e => e.includes('fail1'))).toBe(true);
   });
 
   it('multiple rules: multiple fail', () => {
-    const r = parseSchema('"hello"', STRING_SCHEMA, {
+    const r = structure(STRING_SCHEMA, '"hello"', {
       rules: [() => 'fail1', () => 'fail2'],
     });
     expect(r.ok).toBe(false);
-    expect(r.error).toContain('fail1');
-    expect(r.error).toContain('fail2');
+    expect(r.errors.some(e => e.includes('fail1'))).toBe(true);
+    expect(r.errors.some(e => e.includes('fail2'))).toBe(true);
   });
 
   it('rule receives the coerced value', () => {
-    const r = parseSchema<number>('42', INT_SCHEMA, {
+    const r = structure<number>(INT_SCHEMA, '42', {
       rules: [(v) => (v as number) > 100 ? true : 'must be > 100'],
     });
     expect(r.ok).toBe(false);
-    expect(r.error).toContain('must be > 100');
+    expect(r.errors.some(e => e.includes('must be > 100'))).toBe(true);
   });
 
   it('rule on parser factory', () => {
     const p = parser<number>(INT_SCHEMA, {
       rules: [(v) => (v as number) > 0 ? true : 'must be positive'],
     });
-    expect(p.parse('42').ok).toBe(true);
-    expect(p.parse('-5').ok).toBe(false);
-    expect(p.parse('-5').error).toContain('must be positive');
+    expect(p.structure('42').ok).toBe(true);
+    expect(p.structure('-5').ok).toBe(false);
+    expect(p.structure('-5').errors.some(e => e.includes('must be positive'))).toBe(true);
   });
 
   it('rules not run when coercion fails', () => {
     let ruleRan = false;
     // Use a very strict scenario — parse something that's not boolean
     // Actually coercion might still succeed with fallbacks, so let's
-    // test via parseSchema which checks result.success first
-    const r = parseSchema('"hello"', STRING_SCHEMA, {
+    // test via structure which checks result.success first
+    const r = structure(STRING_SCHEMA, '"hello"', {
       rules: [() => {
         ruleRan = true;
         return true;
@@ -393,7 +393,7 @@ describe('Custom validation rules', () => {
   });
 
   it('rule failure shows in feedback', () => {
-    const r = parseSchema('"hello"', STRING_SCHEMA, {
+    const r = structure(STRING_SCHEMA, '"hello"', {
       rules: [() => 'Name must start with uppercase'],
     });
     const fb = r.feedback()!;
@@ -407,9 +407,9 @@ describe('Custom validation rules', () => {
 
 describe('Coercion descriptions', () => {
   it('extra key has descriptive message', () => {
-    const r = parseSchema(
-      '{"name": "Alice", "age": 30, "email": "a@b.com"}',
+    const r = structure(
       PERSON_SCHEMA,
+      '{"name": "Alice", "age": 30, "email": "a@b.com"}',
     );
     const extraKey = r.coercions.find(c => c.message.includes('extra key'));
     expect(extraKey).toBeDefined();
@@ -417,13 +417,13 @@ describe('Coercion descriptions', () => {
   });
 
   it('single-to-array has descriptive message', () => {
-    const r = parseSchema('42', INT_LIST_SCHEMA);
+    const r = structure(INT_LIST_SCHEMA, '42');
     const wrap = r.coercions.find(c => c.message.includes('Wrapped single value'));
     expect(wrap).toBeDefined();
   });
 
   it('all coercions have non-negative penalties', () => {
-    const r = parseSchema('{"name": "Alice", "age": "30", "extra": true}', PERSON_SCHEMA);
+    const r = structure(PERSON_SCHEMA, '{"name": "Alice", "age": "30", "extra": true}');
     for (const c of r.coercions) {
       expect(c.penalty).toBeGreaterThanOrEqual(0);
     }

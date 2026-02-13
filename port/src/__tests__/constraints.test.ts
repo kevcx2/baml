@@ -4,7 +4,7 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  parseSchema,
+  structure,
   parser,
   extractConstraints,
   validateConstraints,
@@ -368,61 +368,61 @@ describe('validateSchemaConstraints()', () => {
 });
 
 // ============================================================================
-// Integration: parseSchema() with constraints
+// Integration: structure() with constraints
 // ============================================================================
 
-describe('parseSchema() with constraints', () => {
+describe('structure() with constraints', () => {
   it('fails when integer violates minimum', () => {
     const schema = { type: 'integer', minimum: 0 };
-    const r = parseSchema('-5', schema);
+    const r = structure(schema, '-5');
     expect(r.ok).toBe(false);
-    expect(r.error).toContain('minimum');
+    expect(r.errors.join('; ')).toContain('minimum');
   });
 
   it('passes when integer satisfies minimum', () => {
     const schema = { type: 'integer', minimum: 0 };
-    const r = parseSchema('5', schema);
+    const r = structure(schema, '5');
     expect(r.ok).toBe(true);
   });
 
   it('fails when string violates minLength', () => {
     const schema = { type: 'string', minLength: 10 };
-    const r = parseSchema('"hi"', schema);
+    const r = structure(schema, '"hi"');
     expect(r.ok).toBe(false);
-    expect(r.error).toContain('less than minimum');
+    expect(r.errors.join('; ')).toContain('less than minimum');
   });
 
   it('fails when string violates pattern', () => {
     const schema = { type: 'string', pattern: '^[A-Z]+$' };
-    const r = parseSchema('"hello"', schema);
+    const r = structure(schema, '"hello"');
     expect(r.ok).toBe(false);
-    expect(r.error).toContain('pattern');
+    expect(r.errors.join('; ')).toContain('pattern');
   });
 
   it('passes when string matches pattern', () => {
     const schema = { type: 'string', pattern: '^[A-Z]+$' };
-    const r = parseSchema('"HELLO"', schema);
+    const r = structure(schema, '"HELLO"');
     expect(r.ok).toBe(true);
   });
 
   it('fails when string violates email format', () => {
     const schema = { type: 'string', format: 'email' };
-    const r = parseSchema('"not-email"', schema);
+    const r = structure(schema, '"not-email"');
     expect(r.ok).toBe(false);
-    expect(r.error).toContain('email');
+    expect(r.errors.join('; ')).toContain('email');
   });
 
   it('passes when string is valid email', () => {
     const schema = { type: 'string', format: 'email' };
-    const r = parseSchema('"user@example.com"', schema);
+    const r = structure(schema, '"user@example.com"');
     expect(r.ok).toBe(true);
   });
 
   it('fails when array violates minItems', () => {
     const schema = { type: 'array', items: { type: 'integer' }, minItems: 3 };
-    const r = parseSchema('[1, 2]', schema);
+    const r = structure(schema, '[1, 2]');
     expect(r.ok).toBe(false);
-    expect(r.error).toContain('less than minimum');
+    expect(r.errors.join('; ')).toContain('less than minimum');
   });
 
   it('validates nested field constraints', () => {
@@ -434,44 +434,44 @@ describe('parseSchema() with constraints', () => {
       },
       required: ['name', 'age'],
     };
-    const r = parseSchema('{"name": "", "age": 200}', schema);
+    const r = structure(schema, '{"name": "", "age": 200}');
     expect(r.ok).toBe(false);
-    expect(r.error).toContain('name');
-    expect(r.error).toContain('age');
+    expect(r.errors.join('; ')).toContain('name');
+    expect(r.errors.join('; ')).toContain('age');
   });
 
   it('constraint errors show in feedback()', () => {
     const schema = { type: 'integer', minimum: 0 };
-    const r = parseSchema('-5', schema);
+    const r = structure(schema, '-5');
     const fb = r.feedback()!;
     expect(fb).toContain('minimum');
   });
 
   it('can disable constraint validation', () => {
     const schema = { type: 'integer', minimum: 0 };
-    const r = parseSchema('-5', schema, { validateConstraints: false });
+    const r = structure(schema, '-5', { validateConstraints: false });
     expect(r.ok).toBe(true);
     expect(r.data).toBe(-5);
   });
 
   it('constraints + rules both run', () => {
     const schema = { type: 'integer', minimum: 0 };
-    const r = parseSchema('5', schema, {
+    const r = structure(schema, '5', {
       rules: [(v) => (v as number) > 10 ? true : 'must be > 10'],
     });
     expect(r.ok).toBe(false);
-    expect(r.error).toContain('must be > 10');
+    expect(r.errors.join('; ')).toContain('must be > 10');
   });
 
   it('constraints fail before rules', () => {
     const schema = { type: 'integer', minimum: 0 };
     let ruleRan = false;
-    const r = parseSchema('-5', schema, {
+    const r = structure(schema, '-5', {
       rules: [() => { ruleRan = true; return true; }],
     });
     // Rules still run since coercion succeeded — constraints are separate
     expect(r.ok).toBe(false);
-    expect(r.error).toContain('minimum');
+    expect(r.errors.join('; ')).toContain('minimum');
   });
 });
 
@@ -480,17 +480,17 @@ describe('parseSchema() with constraints', () => {
 // ============================================================================
 
 describe('parser() with constraints', () => {
-  it('validates constraints on each parse call', () => {
+  it('validates constraints on each structure call', () => {
     const p = parser<number>({ type: 'integer', minimum: 0, maximum: 100 });
-    expect(p.parse('50').ok).toBe(true);
-    expect(p.parse('-1').ok).toBe(false);
-    expect(p.parse('101').ok).toBe(false);
+    expect(p.structure('50').ok).toBe(true);
+    expect(p.structure('-1').ok).toBe(false);
+    expect(p.structure('101').ok).toBe(false);
   });
 
   it('validates string format constraints', () => {
     const p = parser<string>({ type: 'string', format: 'email' });
-    expect(p.parse('"user@example.com"').ok).toBe(true);
-    expect(p.parse('"not-an-email"').ok).toBe(false);
+    expect(p.structure('"user@example.com"').ok).toBe(true);
+    expect(p.structure('"not-an-email"').ok).toBe(false);
   });
 
   it('validates array item constraints', () => {
@@ -499,9 +499,9 @@ describe('parser() with constraints', () => {
       items: { type: 'integer', minimum: 0 },
       minItems: 1,
     });
-    expect(p.parse('[1, 2, 3]').ok).toBe(true);
-    expect(p.parse('[]').ok).toBe(false);
-    expect(p.parse('[1, -1, 3]').ok).toBe(false);
+    expect(p.structure('[1, 2, 3]').ok).toBe(true);
+    expect(p.structure('[]').ok).toBe(false);
+    expect(p.structure('[1, -1, 3]').ok).toBe(false);
   });
 
   it('parser with constraints disabled', () => {
@@ -509,6 +509,6 @@ describe('parser() with constraints', () => {
       { type: 'integer', minimum: 0 },
       { validateConstraints: false },
     );
-    expect(p.parse('-5').ok).toBe(true);
+    expect(p.structure('-5').ok).toBe(true);
   });
 });

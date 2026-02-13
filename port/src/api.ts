@@ -1,10 +1,13 @@
 /**
  * Public API
  *
- * Three levels of usage:
- *   1. `parseSchema(text, schema)` — one-shot parse, returns ParseResult<T>
- *   2. `prompt(schema)` — render an output format prompt snippet
- *   3. `parser(schema)` — factory: bundles schema+options, exposes .parse() / .prompt()
+ * Three entry points:
+ *   1. `prompt(s)`           — render an output format prompt snippet
+ *   2. `structure(s, text)`  — one-shot parse, returns StructuredResult<T>
+ *   3. `stream(s)`           — streaming parser with .feed() / .close()
+ *
+ * Factory (for pre-compiled schemas):
+ *   - `parser(s)` — bundles schema+options, exposes .structure() / .prompt() / .stream()
  *
  * Legacy (still exported for backward compat):
  *   - `coerceToSchema(text, schema)` — original API returning CoercionResult
@@ -18,7 +21,7 @@ import { ParsingContext } from './coercer/context.js';
 import { totalScore } from './flags.js';
 import type { CoercionResult, ParseError } from './result.js';
 import type { FieldType as FieldTypeT } from './types.js';
-import { ParseResult } from './parse-result.js';
+import { StructuredResult } from './parse-result.js';
 import {
   renderOutputFormat,
   renderOutputFormatFromType,
@@ -61,7 +64,7 @@ export interface CoerceOptions {
  */
 export type SchemaInput = Record<string, unknown> | { _def: unknown; parse: Function };
 
-export interface ParseSchemaOptions extends CoerceOptions {
+export interface StructureOptions extends CoerceOptions {
   /** Options for prompt rendering. */
   render?: RenderOptions;
   /** Custom validation rules run after coercion. */
@@ -74,25 +77,25 @@ export interface ParseSchemaOptions extends CoerceOptions {
 }
 
 // ============================================================================
-// NEW PRIMARY API
+// PRIMARY API
 // ============================================================================
 
 // ---------------------------------------------------------------------------
-// parseSchema() — one-shot parse
+// structure() — one-shot parse
 // ---------------------------------------------------------------------------
 
 /**
- * Parse LLM text against a JSON Schema (or Zod schema) and return a ParseResult<T>.
+ * Parse LLM text against a JSON Schema (or Zod schema) and return a StructuredResult<T>.
  *
- * @param text    Raw LLM output text.
  * @param schema  JSON Schema object or Zod schema defining the expected structure.
+ * @param text    Raw LLM output text.
  * @param options Optional configuration.
  */
-export function parseSchema<T = unknown>(
-  text: string,
+export function structure<T = unknown>(
   schema: SchemaInput,
-  options?: ParseSchemaOptions,
-): ParseResult<T> {
+  text: string,
+  options?: StructureOptions,
+): StructuredResult<T> {
   const jsonSchema = normalizeSchema(schema);
   const outputFormat = renderOutputFormat(jsonSchema, options?.render);
   const result = coerceToSchema(text, jsonSchema, options);
@@ -117,18 +120,15 @@ export function parseSchema<T = unknown>(
     }
   }
 
-  const allErrors = [...constraintErrors, ...ruleErrors];
+  const allErrors = !result.success
+    ? result.errors.map((e) => e.message)
+    : [...constraintErrors, ...ruleErrors];
   const ok = result.success && allErrors.length === 0;
-  const errorMessage = !result.success
-    ? result.errors.map((e) => e.message).join('; ')
-    : allErrors.length > 0
-      ? allErrors.join('; ')
-      : undefined;
 
-  return new ParseResult<T>({
+  return new StructuredResult<T>({
     ok,
     data: result.value as T | undefined,
-    error: errorMessage,
+    errors: allErrors,
     score: result.score,
     flags: result.flags,
     raw: text,
@@ -142,7 +142,6 @@ export function parseSchema<T = unknown>(
 
 /**
  * Render an output format prompt snippet from a JSON Schema (or Zod schema).
- * Alias for `renderOutputFormat()` with a shorter name.
  */
 export function prompt(
   schema: SchemaInput,
@@ -173,19 +172,19 @@ export function stream<T = unknown>(
 // parser() — factory
 // ---------------------------------------------------------------------------
 
-export interface ParserOptions extends ParseSchemaOptions {
+export interface ParserOptions extends StructureOptions {
   /** Options for prompt rendering. */
   render?: RenderOptions;
 }
 
 export interface Parser<T = unknown> {
   /** Parse LLM text against the bound schema. */
-  parse(text: string): ParseResult<T>;
+  structure(text: string): StructuredResult<T>;
   /** Render the output format prompt snippet for the bound schema. */
   prompt(): string;
   /**
    * Create a streaming parser for incremental LLM output.
-   * Call .feed(chunk) as tokens arrive, then .done() when complete.
+   * Call .feed(chunk) as tokens arrive, then .close() when complete.
    */
   stream(options?: StreamParserOptions): StreamParser<T>;
   /** The JSON Schema this parser was created with. */
@@ -195,30 +194,29 @@ export interface Parser<T = unknown> {
 /**
  * Create a reusable parser bound to a specific JSON Schema (or Zod schema).
  *
- * The schema is compiled once; subsequent .parse() calls skip re-compilation.
+ * The schema is compiled once; subsequent .structure() calls skip re-compilation.
  */
 export function parser<T = unknown>(
   schema: SchemaInput,
   options?: ParserOptions,
 ): Parser<T> {
   const jsonSchema = normalizeSchema(schema);
-  // Pre-compile: convert schema → internal types once.
   const schemaConversion = schemaToType(jsonSchema, options?.schema);
   const outputFormat = renderOutputFormat(jsonSchema, options?.render);
 
   return {
     schema: jsonSchema,
 
-    parse(text: string): ParseResult<T> {
+    structure(text: string): StructuredResult<T> {
       const parsed = structuralParse(text, options?.parse);
       const ctx = new ParsingContext(schemaConversion.definitions);
       const result = coerce(parsed, schemaConversion.type, ctx);
 
       if (result === null) {
-        return new ParseResult<T>({
+        return new StructuredResult<T>({
           ok: false,
           data: undefined,
-          error: 'Failed to coerce value to target type',
+          errors: ['Failed to coerce value to target type'],
           score: Infinity,
           flags: [],
           raw: text,
@@ -228,7 +226,6 @@ export function parser<T = unknown>(
 
       const score = totalScore(result.flags);
 
-      // Run constraint validation
       const constraintErrors: string[] = [];
       if (options?.validateConstraints ?? true) {
         const violations = validateSchemaConstraints(result.value, jsonSchema);
@@ -237,7 +234,6 @@ export function parser<T = unknown>(
         }
       }
 
-      // Run custom rules
       const ruleErrors: string[] = [];
       if (options?.rules) {
         for (const rule of options.rules) {
@@ -250,14 +246,11 @@ export function parser<T = unknown>(
 
       const allErrors = [...constraintErrors, ...ruleErrors];
       const ok = allErrors.length === 0;
-      const errorMessage = allErrors.length > 0
-        ? allErrors.join('; ')
-        : undefined;
 
-      return new ParseResult<T>({
+      return new StructuredResult<T>({
         ok,
         data: result.value as T | undefined,
-        error: errorMessage,
+        errors: allErrors,
         score,
         flags: result.flags,
         raw: text,
@@ -288,9 +281,7 @@ export function parser<T = unknown>(
 // ============================================================================
 
 /**
- * Parse LLM text and coerce it into a value conforming to the given JSON Schema.
- *
- * @deprecated Use `parseSchema()` or `parser()` instead.
+ * @deprecated Use `structure()` or `parser()` instead.
  */
 export function coerceToSchema(
   text: string,
@@ -299,7 +290,6 @@ export function coerceToSchema(
 ): CoercionResult {
   const errors: ParseError[] = [];
 
-  // Phase 1: Convert JSON Schema → internal type representation
   let targetType: FieldTypeT;
   let definitions: Map<string, FieldTypeT>;
   try {
@@ -320,10 +310,7 @@ export function coerceToSchema(
     };
   }
 
-  // Phase 2: Structural parse — extract jsonish values from raw text
   const parsed = structuralParse(text, options?.parse);
-
-  // Phase 3: Schema-aware coercion
   const ctx = new ParsingContext(definitions);
   const result = coerce(parsed, targetType, ctx);
 

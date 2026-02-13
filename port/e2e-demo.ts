@@ -12,10 +12,10 @@ import OpenAI from 'openai';
 import { z } from 'zod';
 import {
   parser,
-  parseSchema,
+  structure,
   prompt,
   stream,
-  type ParseResult,
+  type StructuredResult,
 } from './src/index.js';
 
 // ---------------------------------------------------------------------------
@@ -40,7 +40,7 @@ function hr(title: string) {
   console.log(`${'='.repeat(70)}\n`);
 }
 
-function printResult(r: ParseResult<any>) {
+function printResult(r: StructuredResult<any>) {
   console.log(`  ok:     ${r.ok}`);
   console.log(`  score:  ${r.score}`);
   console.log(`  data:   ${JSON.stringify(r.data, null, 2)}`);
@@ -50,8 +50,8 @@ function printResult(r: ParseResult<any>) {
       console.log(`    - ${c.message} (penalty: ${c.penalty})`);
     }
   }
-  if (!r.ok) {
-    console.log(`  error:  ${r.error}`);
+  if (r.errors.length > 0) {
+    console.log(`  error:  ${r.errors.join('; ')}`);
   }
 }
 
@@ -96,9 +96,9 @@ async function test1_staticPerson() {
   console.log('  ' + raw.replace(/\n/g, '\n  '));
   console.log();
 
-  const result = parseSchema<{ name: string; age: number; occupation: string }>(
-    raw,
+  const result = structure<{ name: string; age: number; occupation: string }>(
     personSchema,
+    raw,
   );
 
   console.log('  Parsed result:');
@@ -155,7 +155,7 @@ async function test2_staticZod() {
   console.log('  ' + raw.replace(/\n/g, '\n  '));
   console.log();
 
-  const result = p.parse(raw);
+  const result = p.structure(raw);
   console.log('  Parsed result:');
   printResult(result);
 
@@ -198,7 +198,7 @@ async function test3_staticEnum() {
   const raw = response.choices[0].message.content ?? '';
   console.log('  Raw LLM output: ' + raw);
 
-  const result = parseSchema<string>(raw, sentimentSchema);
+  const result = structure<string>(sentimentSchema, raw);
   console.log('  Parsed result:');
   printResult(result);
   console.log(`\n  ✓ Sentiment: ${result.assert()}`);
@@ -263,11 +263,11 @@ async function test4_streamingPerson() {
     if (!delta) continue;
 
     tokenCount++;
-    const partial = s.feed(delta);
+    const partial = s.feed(delta).partial;
 
     // Print a snapshot every ~15 tokens (if data changed)
-    const snapshot = JSON.stringify(partial.data);
-    if (tokenCount % 15 === 0 && snapshot !== lastSnapshot && partial.hasData) {
+    const snapshot = JSON.stringify(partial);
+    if (tokenCount % 15 === 0 && snapshot !== lastSnapshot && partial) {
       console.log(`  [token ${tokenCount}] partial: ${snapshot}`);
       lastSnapshot = snapshot;
     }
@@ -277,7 +277,7 @@ async function test4_streamingPerson() {
   console.log(`  Accumulated text: ${s.text().slice(0, 120)}...`);
   console.log();
 
-  const finalResult = s.done();
+  const finalResult = s.close();
   console.log('  Final result:');
   printResult(finalResult);
 
@@ -338,11 +338,11 @@ async function test5_streamingArray() {
     if (!delta) continue;
 
     tokenCount++;
-    const partial = s.feed(delta);
+    const partial = s.feed(delta).partial;
 
     // Log ingredient count as it grows
-    if (tokenCount % 20 === 0 && partial.hasData) {
-      const d = partial.data as any;
+    if (tokenCount % 20 === 0 && partial) {
+      const d = partial as any;
       const ingredientCount = d?.ingredients?.length ?? 0;
       const stepCount = d?.steps?.length ?? 0;
       console.log(`  [token ${tokenCount}] ingredients: ${ingredientCount}, steps: ${stepCount}`);
@@ -351,7 +351,7 @@ async function test5_streamingArray() {
 
   console.log(`\n  Total tokens: ${tokenCount}`);
 
-  const finalResult = s.done();
+  const finalResult = s.close();
   console.log('\n  Final result:');
   printResult(finalResult);
 
@@ -408,7 +408,7 @@ async function test6_feedbackLoop() {
   ];
 
   const MAX_RETRIES = 2;
-  let result: ParseResult<any> | null = null;
+  let result: StructuredResult<any> | null = null;
 
   for (let attempt = 1; attempt <= MAX_RETRIES + 1; attempt++) {
     console.log(`  Attempt ${attempt}...`);
@@ -421,7 +421,7 @@ async function test6_feedbackLoop() {
     const raw = response.choices[0].message.content ?? '';
     console.log(`  Raw: ${raw.slice(0, 100)}...`);
 
-    result = p.parse(raw);
+    result = p.structure(raw);
     console.log(`  ok: ${result.ok}, score: ${result.score}`);
 
     if (result.ok) {
