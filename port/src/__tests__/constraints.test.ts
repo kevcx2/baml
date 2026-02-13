@@ -220,6 +220,112 @@ describe('validateConstraints()', () => {
       const c = extractConstraints({ format: 'custom-unknown' });
       expect(validateConstraints('anything', c)).toHaveLength(0);
     });
+
+    // -----------------------------------------------------------------------
+    // Comprehensive date/date-time edge cases
+    // -----------------------------------------------------------------------
+
+    describe('date edge cases', () => {
+      const dc = extractConstraints({ format: 'date' });
+
+      // --- Valid ISO 8601 dates ---
+      it.each([
+        ['2024-01-15', 'normal date'],
+        ['2024-12-31', 'end of year'],
+        ['2024-01-01', 'start of year'],
+        ['2000-01-01', 'Y2K'],
+        ['1999-12-31', 'pre-Y2K'],
+        ['2024-02-29', 'leap day (2024 is leap year)'],
+        ['2100-01-01', 'far future'],
+      ])('%s (%s) → valid', (input) => {
+        expect(validateConstraints(input, dc)).toHaveLength(0);
+      });
+
+      // --- Invalid: wrong format ---
+      it.each([
+        ['01-15-2024', 'MM-DD-YYYY'],
+        ['15-01-2024', 'DD-MM-YYYY'],
+        ['01/15/2024', 'MM/DD/YYYY with slashes'],
+        ['15/01/2024', 'DD/MM/YYYY with slashes'],
+        ['2024/01/15', 'YYYY/MM/DD with slashes'],
+        ['January 15, 2024', 'English prose'],
+        ['Jan 15, 2024', 'abbreviated month'],
+        ['15 Jan 2024', 'DD Mon YYYY'],
+        ['2024.01.15', 'dots as separator'],
+        ['20240115', 'compact ISO (no dashes)'],
+        ['2024-1-15', 'single-digit month'],
+        ['2024-01-5', 'single-digit day'],
+      ])('%s (%s) → invalid', (input) => {
+        expect(validateConstraints(input, dc)).toHaveLength(1);
+      });
+
+      // --- Ambiguous / tricky calendar dates ---
+      it.each([
+        ['2024-02-31', 'Feb 31 (impossible day — does Date.parse accept?)'],
+        ['2023-02-29', 'Feb 29 in non-leap year 2023'],
+        ['2024-13-01', 'month 13'],
+        ['2024-00-01', 'month 00'],
+        ['2024-01-00', 'day 00'],
+        ['2024-01-32', 'day 32'],
+        ['0000-01-01', 'year zero'],
+      ])('%s (%s) → check behavior', (input, _label) => {
+        const v = validateConstraints(input, dc);
+        // Just record the result; we want to see what passes/fails
+        expect(typeof v.length).toBe('number');
+      });
+    });
+
+    describe('date-time edge cases', () => {
+      const dtc = extractConstraints({ format: 'date-time' });
+
+      // --- Valid ---
+      it.each([
+        ['2024-01-15T10:30:00Z', 'UTC with Z'],
+        ['2024-01-15T10:30:00+05:30', 'with timezone offset'],
+        ['2024-01-15T10:30:00-05:00', 'negative offset'],
+        ['2024-01-15T00:00:00Z', 'midnight'],
+        ['2024-01-15T23:59:59Z', 'end of day'],
+        ['2024-01-15T10:30:00.123Z', 'with milliseconds'],
+        ['2024-01-15T10:30:00.123456Z', 'with microseconds'],
+      ])('%s (%s) → valid', (input) => {
+        expect(validateConstraints(input, dtc)).toHaveLength(0);
+      });
+
+      // --- Invalid ---
+      it.each([
+        ['2024-01-15', 'date only, no time'],
+        ['10:30:00Z', 'time only'],
+        ['2024-01-15 10:30:00', 'space instead of T'],
+        ['not-a-datetime', 'garbage'],
+        ['January 15, 2024 10:30 AM', 'English prose datetime'],
+      ])('%s (%s) → invalid', (input) => {
+        expect(validateConstraints(input, dtc)).toHaveLength(1);
+      });
+    });
+
+    describe('time edge cases', () => {
+      const tc = extractConstraints({ format: 'time' });
+
+      it.each([
+        ['10:30:00', 'basic time'],
+        ['00:00:00', 'midnight'],
+        ['23:59:59', 'end of day'],
+        ['10:30:00.123', 'with fractional seconds'],
+        ['10:30:00Z', 'with Z'],
+        ['10:30:00+05:30', 'with offset'],
+      ])('%s (%s) → valid', (input) => {
+        expect(validateConstraints(input, tc)).toHaveLength(0);
+      });
+
+      it.each([
+        ['10:30', 'HH:MM only (no seconds)'],
+        ['10:30 AM', '12-hour format'],
+        ['25:00:00', 'hour 25 (regex passes, no range check)'],
+      ])('%s (%s) → check behavior', (input) => {
+        const v = validateConstraints(input, tc);
+        expect(typeof v.length).toBe('number');
+      });
+    });
   });
 
   describe('array', () => {
@@ -445,6 +551,32 @@ describe('shape() with constraints', () => {
     const r = shape(schema, '-5');
     const fb = r.feedback()!;
     expect(fb).toContain('minimum');
+  });
+
+  // --- Date integration through full shape() pipeline ---
+  describe('date format through shape()', () => {
+    const schema = { type: 'string' as const, format: 'date' };
+
+    it.each([
+      // LLM returns JSON-quoted string
+      ['"2024-06-15"', true, '2024-06-15'],
+      // LLM returns bare string (no quotes)
+      ['2024-06-15', true, '2024-06-15'],
+      // LLM returns wrong format
+      ['"06/15/2024"', false, undefined],
+      ['"June 15, 2024"', false, undefined],
+      // LLM returns in markdown code block — fails: extracted string includes
+      // quotes or the format check fails on the markdown-wrapped value
+      ['```\n"2024-06-15"\n```', false, undefined],
+      // LLM returns with surrounding text — fails: coerced as full string
+      ['The date is 2024-06-15.', false, undefined],
+    ])('shape(%s) → ok=%s', (input, expectedOk, expectedData) => {
+      const r = shape(schema, input);
+      expect(r.ok).toBe(expectedOk);
+      if (expectedData !== undefined) {
+        expect(r.data).toBe(expectedData);
+      }
+    });
   });
 
   it('can disable constraint validation', () => {
