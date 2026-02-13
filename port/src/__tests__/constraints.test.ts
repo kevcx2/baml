@@ -259,19 +259,26 @@ describe('validateConstraints()', () => {
         expect(validateConstraints(input, dc)).toHaveLength(1);
       });
 
-      // --- Ambiguous / tricky calendar dates ---
+      // --- Impossible calendar dates (must be rejected) ---
       it.each([
-        ['2024-02-31', 'Feb 31 (impossible day — does Date.parse accept?)'],
-        ['2023-02-29', 'Feb 29 in non-leap year 2023'],
+        ['2024-02-31', 'Feb 31'],
+        ['2023-02-29', 'Feb 29 in non-leap year'],
+        ['2024-06-31', 'June 31 (June has 30 days)'],
+        ['2024-04-31', 'April 31 (April has 30 days)'],
         ['2024-13-01', 'month 13'],
         ['2024-00-01', 'month 00'],
         ['2024-01-00', 'day 00'],
         ['2024-01-32', 'day 32'],
-        ['0000-01-01', 'year zero'],
-      ])('%s (%s) → check behavior', (input, _label) => {
-        const v = validateConstraints(input, dc);
-        // Just record the result; we want to see what passes/fails
-        expect(typeof v.length).toBe('number');
+      ])('%s (%s) → invalid', (input) => {
+        expect(validateConstraints(input, dc)).toHaveLength(1);
+      });
+
+      // --- Boundary cases that remain valid ---
+      it.each([
+        ['9999-12-31', 'far future'],
+        ['2024-02-29', 'leap year Feb 29 (valid)'],
+      ])('%s (%s) → valid (boundary)', (input) => {
+        expect(validateConstraints(input, dc)).toHaveLength(0);
       });
     });
 
@@ -317,13 +324,16 @@ describe('validateConstraints()', () => {
         expect(validateConstraints(input, tc)).toHaveLength(0);
       });
 
+      // --- Invalid time values ---
       it.each([
         ['10:30', 'HH:MM only (no seconds)'],
         ['10:30 AM', '12-hour format'],
-        ['25:00:00', 'hour 25 (regex passes, no range check)'],
-      ])('%s (%s) → check behavior', (input) => {
-        const v = validateConstraints(input, tc);
-        expect(typeof v.length).toBe('number');
+        ['25:00:00', 'hour 25'],
+        ['99:99:99', 'all out of range'],
+        ['00:60:00', 'minute 60'],
+        ['00:00:60', 'second 60'],
+      ])('%s (%s) → invalid', (input) => {
+        expect(validateConstraints(input, tc)).toHaveLength(1);
       });
     });
   });
