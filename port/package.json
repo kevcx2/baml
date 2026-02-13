@@ -16,6 +16,7 @@
     "vitest": "^3.0.0"
   },
   "dependencies": {
+    "openai": "^6.21.0",
     "zod": "^4.3.6"
   }
 }
