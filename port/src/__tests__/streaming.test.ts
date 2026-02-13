@@ -257,6 +257,74 @@ describe('Simulated streaming scenarios', () => {
     expect(r.data?.[1].name).toBe('B');
   });
 
+  it('streaming nested arrays accumulate monotonically', () => {
+    // Simulates the recipe streaming scenario: an outer object with nested
+    // arrays that grow as tokens arrive. The parser must not lose array
+    // elements when Stage 3 (multi-JSON) finds complete inner objects.
+    const schema = {
+      type: 'object',
+      properties: {
+        dish: { type: 'string' },
+        ingredients: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              name: { type: 'string' },
+              amount: { type: 'string' },
+            },
+            required: ['name', 'amount'],
+          },
+        },
+        steps: { type: 'array', items: { type: 'string' } },
+      },
+      required: ['dish', 'ingredients', 'steps'],
+    };
+
+    type Recipe = {
+      dish: string;
+      ingredients: { name: string; amount: string }[];
+      steps: string[];
+    };
+
+    const p = shaper<Recipe>(schema);
+    const s = p.stream();
+
+    // Token 1: start of object + first partial ingredient
+    s.feed('{"dish": "Pancakes", "ingredients": [{"name": "flour"');
+    let r = s.current();
+    expect(r.hasData).toBe(true);
+    expect((r.partial as any)?.dish).toBe('Pancakes');
+
+    // Token 2: first ingredient complete, second starts
+    s.feed(', "amount": "2 cups"}, {"name": "sugar"');
+    r = s.current();
+    expect((r.partial as any)?.ingredients?.length).toBeGreaterThanOrEqual(1);
+
+    // Token 3: second ingredient complete
+    s.feed(', "amount": "1 tbsp"}');
+    r = s.current();
+    expect((r.partial as any)?.ingredients?.length).toBeGreaterThanOrEqual(2);
+
+    // Token 4: third ingredient complete + array closes
+    s.feed(', {"name": "eggs", "amount": "2"}]');
+    r = s.current();
+    expect((r.partial as any)?.ingredients?.length).toBe(3);
+
+    // Token 5: steps begin
+    s.feed(', "steps": ["Mix dry ingredients"');
+    r = s.current();
+    expect((r.partial as any)?.ingredients?.length).toBe(3);
+    expect((r.partial as any)?.steps?.length).toBeGreaterThanOrEqual(1);
+
+    // Token 6: complete
+    s.feed(', "Add wet ingredients", "Cook"]}');
+    const final = s.close();
+    expect(final.ok).toBe(true);
+    expect(final.data?.ingredients).toHaveLength(3);
+    expect(final.data?.steps).toHaveLength(3);
+  });
+
   it('handles empty stream gracefully', () => {
     const p = shaper<string>(STRING_SCHEMA);
     const s = p.stream();

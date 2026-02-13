@@ -122,13 +122,23 @@ function isDefaultValue(v: CoercedValue): boolean {
     return true;
   }
 
-  // Object where every flag is a default
+  // Object where ALL fields are defaulted (every value is null/undefined).
+  // Only consider it "default" if the flags are all default-type AND the
+  // actual value object contains no real data. This avoids falsely marking
+  // partially-streamed objects (e.g. dish="Pancakes" with one missing field)
+  // as "default" just because their only coercion flag is default-from-no-value.
   const defaultKinds = new Set(['default-from-no-value', 'optional-default-from-no-value']);
   if (
     v.flags.length > 0 &&
     v.flags.every((f) => defaultKinds.has(f.kind)) &&
     v.flags.some((f) => f.kind === 'default-from-no-value')
   ) {
+    if (typeof v.value === 'object' && v.value !== null && !Array.isArray(v.value)) {
+      const vals = Object.values(v.value as Record<string, unknown>);
+      if (vals.length > 0 && vals.some((val) => val !== null && val !== undefined)) {
+        return false; // Has real data — not a default
+      }
+    }
     return true;
   }
 

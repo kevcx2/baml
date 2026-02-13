@@ -372,6 +372,11 @@ async function test5_streamingArray() {
 async function test6_feedbackLoop() {
   hr('Test 6: Feedback Loop — Retry on constraint failure');
 
+  // Schema for a haiku with a "mood" field constrained to a closed vocabulary.
+  // The LLM won't know the valid moods on attempt 1, so the constraint will
+  // fail. The feedback loop tells the LLM the allowed values, and it fixes it.
+  const ALLOWED_MOODS = ['contemplative', 'joyful', 'melancholic'] as const;
+
   const schema = {
     type: 'object',
     properties: {
@@ -379,20 +384,27 @@ async function test6_feedbackLoop() {
       haiku_line2: { type: 'string', description: 'Second line, exactly 7 syllables' },
       haiku_line3: { type: 'string', description: 'Third line, exactly 5 syllables' },
       topic: { type: 'string' },
+      mood: { type: 'string', description: 'The overall mood of the haiku' },
     },
-    required: ['haiku_line1', 'haiku_line2', 'haiku_line3', 'topic'],
+    required: ['haiku_line1', 'haiku_line2', 'haiku_line3', 'topic', 'mood'],
   };
 
-  const p = shaper<{
+  type Haiku = {
     haiku_line1: string;
     haiku_line2: string;
     haiku_line3: string;
     topic: string;
-  }>(schema, {
+    mood: string;
+  };
+
+  const p = shaper<Haiku>(schema, {
     rules: [
-      (v: any) => v.haiku_line1.length > 0 ? true : 'Line 1 cannot be empty',
-      (v: any) => v.haiku_line2.length > 0 ? true : 'Line 2 cannot be empty',
-      (v: any) => v.haiku_line3.length > 0 ? true : 'Line 3 cannot be empty',
+      (v: any) => ALLOWED_MOODS.includes(v.mood)
+        ? true
+        : `"mood" must be one of: ${ALLOWED_MOODS.join(', ')} (got "${v.mood}")`,
+      (v: any) => v.topic === 'code'
+        ? true
+        : `"topic" must be exactly "code" (got "${v.topic}")`,
     ],
   });
 
@@ -428,10 +440,16 @@ async function test6_feedbackLoop() {
       break;
     }
 
+    // Show the errors
+    for (const e of result.errors) {
+      console.log(`  ✗ ${e}`);
+    }
+
     // Use feedback to retry
     const fb = result.feedback();
     if (fb && attempt <= MAX_RETRIES) {
-      console.log(`  Feedback sent to LLM for retry...\n`);
+      console.log(`\n  → Sending feedback to LLM for retry...`);
+      console.log(`  ${fb.split('\n').join('\n  ')}\n`);
       messages.push({ role: 'assistant', content: raw });
       messages.push({ role: 'user', content: fb });
     }
@@ -439,7 +457,7 @@ async function test6_feedbackLoop() {
 
   if (result?.ok) {
     const data = result.data!;
-    console.log(`\n  ✓ Haiku about "${data.topic}":`);
+    console.log(`\n  ✓ Haiku about "${data.topic}" (mood: ${data.mood}):`);
     console.log(`    ${data.haiku_line1}`);
     console.log(`    ${data.haiku_line2}`);
     console.log(`    ${data.haiku_line3}`);

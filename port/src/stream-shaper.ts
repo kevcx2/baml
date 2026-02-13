@@ -126,13 +126,25 @@ export class StreamShaper<T = unknown> {
 
       if (result !== null) {
         const score = totalScore(result.flags);
-        this.lastResult = {
-          partial: result.value as DeepPartial<T>,
-          hasData: true,
-          raw: this.accumulated,
-          score,
-          flags: result.flags,
-        };
+        // Only accept the new parse if it's at least as good as (or better
+        // than) what we already have. This prevents regressions where a
+        // partial stream token causes the parser to pick a worse
+        // interpretation (e.g. a tiny inner fragment rather than the full
+        // partially-fixed object).
+        if (score <= this.lastResult.score) {
+          this.lastResult = {
+            partial: result.value as DeepPartial<T>,
+            hasData: true,
+            raw: this.accumulated,
+            score,
+            flags: result.flags,
+          };
+        } else {
+          this.lastResult = {
+            ...this.lastResult,
+            raw: this.accumulated,
+          };
+        }
       } else {
         this.lastResult = {
           ...this.lastResult,

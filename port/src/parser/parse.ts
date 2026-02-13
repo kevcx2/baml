@@ -106,27 +106,37 @@ export function parse(
     }
   }
 
-  // --- Stage 3: Multi-JSON object extraction ---
-  if (opts.findAllJsonObjects) {
-    const found = parseJsonSubstrings(text);
-    if (found.length > 0) {
-      const candidates = found.map((v) =>
-        V.fixedJson(v, ['grepped-for-json']),
-      );
-      if (candidates.length === 1) {
-        return V.anyOf([candidates[0]], text);
-      }
-      // Multiple objects found: include each individually + all as an array.
-      const asArray = V.array(found);
-      return V.anyOf([...candidates, asArray], text);
-    }
-  }
+  // --- Stages 3 + 4: Multi-JSON extraction + Fixing parser ---
+  // Both stages run and their candidates are combined in a single AnyOf.
+  // This is critical for streaming: Stage 3 may find complete inner fragments
+  // (e.g. a single ingredient object) while Stage 4 (fixing parser) produces
+  // the correct partial outer object. The coercer picks the best match.
+  {
+    const candidates: JsonishValue[] = [];
 
-  // --- Stage 4: Fixing parser (will be wired in Phase 5) ---
-  if (opts.allowFixes) {
-    const fixed = tryFixingParser(text);
-    if (fixed !== undefined) {
-      return V.anyOf([fixed], text);
+    // Stage 3: Multi-JSON object extraction
+    if (opts.findAllJsonObjects) {
+      const found = parseJsonSubstrings(text);
+      if (found.length > 0) {
+        for (const v of found) {
+          candidates.push(V.fixedJson(v, ['grepped-for-json']));
+        }
+        if (found.length > 1) {
+          candidates.push(V.array(found));
+        }
+      }
+    }
+
+    // Stage 4: Fixing parser
+    if (opts.allowFixes) {
+      const fixed = tryFixingParser(text);
+      if (fixed !== undefined) {
+        candidates.push(fixed);
+      }
+    }
+
+    if (candidates.length > 0) {
+      return V.anyOf(candidates, text);
     }
   }
 
