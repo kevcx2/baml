@@ -8,6 +8,8 @@
  * that interacts with Zod, keeping the core library Zod-free.
  */
 
+import * as z from 'zod';
+
 // ---------------------------------------------------------------------------
 // Schema type detection
 // ---------------------------------------------------------------------------
@@ -43,29 +45,13 @@ export function isZodSchema(schema: unknown): boolean {
  * @returns          A JSON Schema object suitable for passing to parseSchema/parser.
  */
 export function zodSchemaToJsonSchema(zodSchema: unknown): Record<string, unknown> {
-  // Try Zod v4 built-in: import zod and call z.toJSONSchema()
-  try {
-    const zod = tryRequire('zod');
-    if (zod && typeof zod.toJSONSchema === 'function') {
-      return zod.toJSONSchema(zodSchema) as Record<string, unknown>;
-    }
-  } catch {
-    // zod not available or toJSONSchema failed
-  }
-
-  // Try zod-to-json-schema (for Zod v3)
-  try {
-    const lib = tryRequire('zod-to-json-schema');
-    if (lib && typeof lib.zodToJsonSchema === 'function') {
-      return lib.zodToJsonSchema(zodSchema, { $refStrategy: 'none' }) as Record<string, unknown>;
-    }
-  } catch {
-    // zod-to-json-schema not available
+  if (typeof z.toJSONSchema === 'function') {
+    return z.toJSONSchema(zodSchema as z.ZodType) as Record<string, unknown>;
   }
 
   throw new Error(
     'Cannot convert Zod schema to JSON Schema: ' +
-    'install zod (v4+) or zod-to-json-schema (for v3)',
+    'zod v4+ with toJSONSchema support is required',
   );
 }
 
@@ -84,15 +70,3 @@ export function normalizeSchema(schema: unknown): Record<string, unknown> {
   return schema as Record<string, unknown>;
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/** Safe require that returns null if module not found. */
-function tryRequire(id: string): any {
-  try {
-    return require(id);
-  } catch {
-    return null;
-  }
-}
