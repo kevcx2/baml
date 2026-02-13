@@ -6,8 +6,8 @@ import { describe, it, expect } from 'vitest';
 import {
   shaper,
   stream,
-  StreamParser,
-  StructuredResult,
+  StreamShaper,
+  ShapedResult,
 } from '../index.js';
 
 // ---------------------------------------------------------------------------
@@ -38,14 +38,14 @@ const INT_LIST_SCHEMA = {
 };
 
 // ============================================================================
-// StreamParser via shaper().stream()
+// StreamShaper via shaper().stream()
 // ============================================================================
 
 describe('shaper().stream()', () => {
-  it('creates a StreamParser', () => {
+  it('creates a StreamShaper', () => {
     const p = shaper(PERSON_SCHEMA);
     const s = p.stream();
-    expect(s).toBeInstanceOf(StreamParser);
+    expect(s).toBeInstanceOf(StreamShaper);
   });
 
   it('feed returns StreamResult', () => {
@@ -81,12 +81,12 @@ describe('shaper().stream()', () => {
     expect((r2.partial as any)?.age).toBe(30);
   });
 
-  it('close() returns StructuredResult', () => {
+  it('close() returns ShapedResult', () => {
     const p = shaper<{ name: string; age: number }>(PERSON_SCHEMA);
     const s = p.stream();
     s.feed('{"name": "Alice", "age": 30}');
     const r = s.close();
-    expect(r).toBeInstanceOf(StructuredResult);
+    expect(r).toBeInstanceOf(ShapedResult);
     expect(r.ok).toBe(true);
     expect(r.data?.name).toBe('Alice');
     expect(r.data?.age).toBe(30);
@@ -152,9 +152,9 @@ describe('shaper().stream()', () => {
 // ============================================================================
 
 describe('stream()', () => {
-  it('creates a StreamParser directly', () => {
+  it('creates a StreamShaper directly', () => {
     const s = stream(PERSON_SCHEMA);
-    expect(s).toBeInstanceOf(StreamParser);
+    expect(s).toBeInstanceOf(StreamShaper);
   });
 
   it('works end-to-end', () => {

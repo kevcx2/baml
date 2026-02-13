@@ -1,5 +1,5 @@
 /**
- * Tests for Phase 1: StructuredResult, shape(), prompt(), shaper(), .assert(), .feedback()
+ * Tests for Phase 1: ShapedResult, shape(), prompt(), shaper(), .assert(), .feedback()
  */
 
 import { describe, it, expect } from 'vitest';
@@ -7,8 +7,8 @@ import {
   shape,
   prompt,
   shaper,
-  StructuredResult,
-  StructuredResultError,
+  ShapedResult,
+  ShapedResultError,
 } from '../index.js';
 
 // ---------------------------------------------------------------------------
@@ -43,9 +43,9 @@ const INT_LIST_SCHEMA = {
 // ============================================================================
 
 describe('shape()', () => {
-  it('returns StructuredResult instance', () => {
+  it('returns ShapedResult instance', () => {
     const r = shape(STRING_SCHEMA, '"hello"');
-    expect(r).toBeInstanceOf(StructuredResult);
+    expect(r).toBeInstanceOf(ShapedResult);
   });
 
   it('successful string parse', () => {
@@ -119,10 +119,10 @@ describe('shape()', () => {
 });
 
 // ============================================================================
-// StructuredResult.assert()
+// ShapedResult.assert()
 // ============================================================================
 
-describe('StructuredResult.assert()', () => {
+describe('ShapedResult.assert()', () => {
   it('returns data on success', () => {
     const r = shape<string>(STRING_SCHEMA, '"hello"');
     expect(r.assert()).toBe('hello');
@@ -138,7 +138,7 @@ describe('StructuredResult.assert()', () => {
     expect(data.age).toBe(30);
   });
 
-  it('throws StructuredResultError on failure', () => {
+  it('throws ShapedResultError on failure', () => {
     // Create a result that fails: a completely unmatchable schema
     // We need a schema where coercion genuinely fails
     const strictBoolSchema = { type: 'boolean' };
@@ -146,7 +146,7 @@ describe('StructuredResult.assert()', () => {
     // Bool coercion may still succeed for some strings,
     // so let's use a more definitive test
     if (!r.ok) {
-      expect(() => r.assert()).toThrow(StructuredResultError);
+      expect(() => r.assert()).toThrow(ShapedResultError);
     }
   });
 
@@ -160,17 +160,17 @@ describe('StructuredResult.assert()', () => {
       r.assert();
       expect.fail('should have thrown');
     } catch (e) {
-      expect(e).toBeInstanceOf(StructuredResultError);
-      expect((e as StructuredResultError).result).toBe(r);
+      expect(e).toBeInstanceOf(ShapedResultError);
+      expect((e as ShapedResultError).result).toBe(r);
     }
   });
 });
 
 // ============================================================================
-// StructuredResult.feedback()
+// ShapedResult.feedback()
 // ============================================================================
 
-describe('StructuredResult.feedback()', () => {
+describe('ShapedResult.feedback()', () => {
   it('returns undefined for perfect parse', () => {
     const r = shape(STRING_SCHEMA, '"hello"');
     expect(r.feedback()).toBeUndefined();
@@ -248,10 +248,10 @@ describe('shaper()', () => {
     expect(p.schema).toBe(PERSON_SCHEMA);
   });
 
-  it('.shape() returns StructuredResult', () => {
+  it('.shape() returns ShapedResult', () => {
     const p = shaper(PERSON_SCHEMA);
     const r = p.shape('{"name": "Alice", "age": 30}');
-    expect(r).toBeInstanceOf(StructuredResult);
+    expect(r).toBeInstanceOf(ShapedResult);
     expect(r.ok).toBe(true);
     expect((r.data as any).name).toBe('Alice');
   });

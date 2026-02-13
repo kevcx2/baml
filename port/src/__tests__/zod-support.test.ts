@@ -11,7 +11,7 @@ import {
   isZodSchema,
   zodSchemaToJsonSchema,
   normalizeSchema,
-  StructuredResult,
+  ShapedResult,
 } from '../index.js';
 
 // ============================================================================
@@ -200,9 +200,9 @@ describe('shape() with Zod', () => {
     expect(r.data?.name).toBe('Bob');
   });
 
-  it('returns StructuredResult instance', () => {
+  it('returns ShapedResult instance', () => {
     const r = shape(z.string() as any, '"hello"');
-    expect(r).toBeInstanceOf(StructuredResult);
+    expect(r).toBeInstanceOf(ShapedResult);
   });
 
   it('.assert() works with Zod schema', () => {

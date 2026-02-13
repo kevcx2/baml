@@ -5,7 +5,7 @@
  *
  * Primary API:
  *   - `prompt(s)`        — Render an output format prompt snippet
- *   - `shape(s, text)`   — Parse + validate LLM text → StructuredResult<T>
+ *   - `shape(s, text)`   — Parse + validate LLM text → ShapedResult<T>
  *   - `stream(s)`        — Streaming parser with .feed() / .close()
  *   - `shaper(s)`        — Factory: pre-compiled schema, .shape() / .prompt() / .stream()
  */
@@ -32,11 +32,11 @@ export {
 } from './api.js';
 
 // ---------------------------------------------------------------------------
-// StructuredResult
+// ShapedResult
 // ---------------------------------------------------------------------------
 
-export { StructuredResult, StructuredResultError } from './structured-result.js';
-export type { Coercion, Repair } from './structured-result.js';
+export { ShapedResult, ShapedResultError } from './shaped-result.js';
+export type { Coercion, Repair } from './shaped-result.js';
 
 // ---------------------------------------------------------------------------
 // Constraints
@@ -133,9 +133,9 @@ export {
 // Streaming
 // ---------------------------------------------------------------------------
 
-export { StreamParser } from './stream-parser.js';
+export { StreamShaper } from './stream-shaper.js';
 export type {
   DeepPartial,
   StreamResult,
-  StreamParserOptions,
-} from './stream-parser.js';
+  StreamShaperOptions,
+} from './stream-shaper.js';

@@ -3,8 +3,8 @@
  *
  * Three entry points:
  *   1. `prompt(s)`           — render an output format prompt snippet
- *   2. `shape(s, text)`      — one-shot parse, returns StructuredResult<T>
- *   3. `stream(s)`           — streaming parser with .feed() / .close()
+ *   2. `shape(s, text)`      — one-shot parse, returns ShapedResult<T>
+ *   3. `stream(s)`           — stream shaper with .feed() / .close()
  *
  * Factory (for pre-compiled schemas):
  *   - `shaper(s)` — bundles schema+options, exposes .shape() / .prompt() / .stream()
@@ -21,7 +21,7 @@ import { ParsingContext } from './coercer/context.js';
 import { totalScore } from './flags.js';
 import type { CoercionResult, ParseError } from './result.js';
 import type { FieldType as FieldTypeT } from './types.js';
-import { StructuredResult } from './structured-result.js';
+import { ShapedResult } from './shaped-result.js';
 import {
   renderOutputFormat,
   renderOutputFormatFromType,
@@ -29,7 +29,7 @@ import {
 } from './output-format.js';
 import { validateSchemaConstraints, type ConstraintViolation } from './constraints.js';
 import { normalizeSchema, isZodSchema } from './zod-support.js';
-import { StreamParser, type StreamParserOptions, type StreamResult } from './stream-parser.js';
+import { StreamShaper, type StreamShaperOptions, type StreamResult } from './stream-shaper.js';
 
 // Re-export legacy API unchanged.
 export { renderOutputFormat, renderOutputFormatFromType } from './output-format.js';
@@ -85,7 +85,7 @@ export interface ShapeOptions extends CoerceOptions {
 // ---------------------------------------------------------------------------
 
 /**
- * Parse LLM text against a JSON Schema (or Zod schema) and return a StructuredResult<T>.
+ * Parse LLM text against a JSON Schema (or Zod schema) and return a ShapedResult<T>.
  *
  * @param schema  JSON Schema object or Zod schema defining the expected structure.
  * @param text    Raw LLM output text.
@@ -95,7 +95,7 @@ export function shape<T = unknown>(
   schema: SchemaInput,
   text: string,
   options?: ShapeOptions,
-): StructuredResult<T> {
+): ShapedResult<T> {
   const jsonSchema = normalizeSchema(schema);
   const outputFormat = renderOutputFormat(jsonSchema, options?.render);
   const result = coerceToSchema(text, jsonSchema, options);
@@ -125,7 +125,7 @@ export function shape<T = unknown>(
     : [...constraintErrors, ...ruleErrors];
   const ok = result.success && allErrors.length === 0;
 
-  return new StructuredResult<T>({
+  return new ShapedResult<T>({
     ok,
     data: result.value as T | undefined,
     errors: allErrors,
@@ -155,7 +155,7 @@ export function prompt(
 // ---------------------------------------------------------------------------
 
 /**
- * Create a streaming parser for the given schema.
+ * Create a stream shaper for the given schema.
  *
  * Equivalent to `shaper(schema, options).stream()` but without
  * requiring you to create a shaper factory first.
@@ -163,7 +163,7 @@ export function prompt(
 export function stream<T = unknown>(
   schema: SchemaInput,
   options?: ShaperOptions,
-): StreamParser<T> {
+): StreamShaper<T> {
   const s = shaper<T>(schema, options);
   return s.stream();
 }
@@ -179,14 +179,14 @@ export interface ShaperOptions extends ShapeOptions {
 
 export interface Shaper<T = unknown> {
   /** Parse LLM text against the bound schema. */
-  shape(text: string): StructuredResult<T>;
+  shape(text: string): ShapedResult<T>;
   /** Render the output format prompt snippet for the bound schema. */
   prompt(): string;
   /**
-   * Create a streaming parser for incremental LLM output.
+   * Create a stream shaper for incremental LLM output.
    * Call .feed(chunk) as tokens arrive, then .close() when complete.
    */
-  stream(options?: StreamParserOptions): StreamParser<T>;
+  stream(options?: StreamShaperOptions): StreamShaper<T>;
   /** The JSON Schema this shaper was created with. */
   schema: Record<string, unknown>;
 }
@@ -207,13 +207,13 @@ export function shaper<T = unknown>(
   return {
     schema: jsonSchema,
 
-    shape(text: string): StructuredResult<T> {
+    shape(text: string): ShapedResult<T> {
       const parsed = structuralParse(text, options?.parse);
       const ctx = new ParsingContext(schemaConversion.definitions);
       const result = coerce(parsed, schemaConversion.type, ctx);
 
       if (result === null) {
-        return new StructuredResult<T>({
+        return new ShapedResult<T>({
           ok: false,
           data: undefined,
           errors: ['Failed to coerce value to target type'],
@@ -247,7 +247,7 @@ export function shaper<T = unknown>(
       const allErrors = [...constraintErrors, ...ruleErrors];
       const ok = allErrors.length === 0;
 
-      return new StructuredResult<T>({
+      return new ShapedResult<T>({
         ok,
         data: result.value as T | undefined,
         errors: allErrors,
@@ -262,8 +262,8 @@ export function shaper<T = unknown>(
       return outputFormat;
     },
 
-    stream(streamOpts?: StreamParserOptions): StreamParser<T> {
-      return new StreamParser<T>({
+    stream(streamOpts?: StreamShaperOptions): StreamShaper<T> {
+      return new StreamShaper<T>({
         targetType: schemaConversion.type,
         definitions: schemaConversion.definitions,
         jsonSchema,

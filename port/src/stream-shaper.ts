@@ -1,5 +1,5 @@
 /**
- * Streaming parser support.
+ * Stream shaper support.
  *
  * Provides incremental parsing of LLM output as tokens arrive.
  * On each .feed(chunk), the accumulated text is re-parsed and coerced,
@@ -7,7 +7,7 @@
  *
  * API:
  *   - .feed(chunk)  → { partial } — latest best-effort data
- *   - .close()      → StructuredResult<T> — final validated result
+ *   - .close()      → ShapedResult<T> — final validated result
  */
 
 import { parse as structuralParse, type ParseOptions } from './parser/parse.js';
@@ -16,7 +16,7 @@ import { ParsingContext } from './coercer/context.js';
 import { totalScore } from './flags.js';
 import type { Flag } from './flags.js';
 import type { FieldType as FieldTypeT } from './types.js';
-import { StructuredResult } from './structured-result.js';
+import { ShapedResult } from './shaped-result.js';
 import { validateSchemaConstraints } from './constraints.js';
 import type { ValidationRule } from './api.js';
 
@@ -56,10 +56,10 @@ export interface StreamResult<T = unknown> {
 }
 
 // ---------------------------------------------------------------------------
-// StreamParser
+// StreamShaper
 // ---------------------------------------------------------------------------
 
-export interface StreamParserOptions {
+export interface StreamShaperOptions {
   /** Options for the structural parser. */
   parse?: ParseOptions;
   /** Custom validation rules (only run on .close()). */
@@ -68,7 +68,7 @@ export interface StreamParserOptions {
   validateConstraints?: boolean;
 }
 
-export class StreamParser<T = unknown> {
+export class StreamShaper<T = unknown> {
   private accumulated = '';
   private lastResult: StreamResult<T> = {
     partial: undefined,
@@ -113,7 +113,7 @@ export class StreamParser<T = unknown> {
    */
   feed(chunk: string): StreamResult<T> {
     if (this.isClosed) {
-      throw new Error('StreamParser.feed() called after close()');
+      throw new Error('StreamShaper.feed() called after close()');
     }
 
     this.accumulated += chunk;
@@ -165,14 +165,14 @@ export class StreamParser<T = unknown> {
   }
 
   /**
-   * Finalize the stream and return a full StructuredResult<T>.
+   * Finalize the stream and return a full ShapedResult<T>.
    *
    * Runs constraint validation and custom rules on the final value.
    * After calling close(), no more feed() calls are allowed.
    */
-  close(): StructuredResult<T> {
+  close(): ShapedResult<T> {
     if (this.isClosed) {
-      throw new Error('StreamParser.close() called more than once');
+      throw new Error('StreamShaper.close() called more than once');
     }
     this.isClosed = true;
 
@@ -182,7 +182,7 @@ export class StreamParser<T = unknown> {
     const result = coerce(parsed, this.targetType, ctx);
 
     if (result === null) {
-      return new StructuredResult<T>({
+      return new ShapedResult<T>({
         ok: false,
         data: undefined,
         errors: ['Failed to coerce value to target type'],
@@ -216,7 +216,7 @@ export class StreamParser<T = unknown> {
     const allErrors = [...constraintErrors, ...ruleErrors];
     const ok = allErrors.length === 0;
 
-    return new StructuredResult<T>({
+    return new ShapedResult<T>({
       ok,
       data: result.value as T | undefined,
       errors: allErrors,

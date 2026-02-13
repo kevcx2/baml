@@ -15,7 +15,7 @@ import {
   shape,
   prompt,
   stream,
-  type StructuredResult,
+  type ShapedResult,
 } from './src/index.js';
 
 // ---------------------------------------------------------------------------
@@ -40,7 +40,7 @@ function hr(title: string) {
   console.log(`${'='.repeat(70)}\n`);
 }
 
-function printResult(r: StructuredResult<any>) {
+function printResult(r: ShapedResult<any>) {
   console.log(`  ok:     ${r.ok}`);
   console.log(`  score:  ${r.score}`);
   console.log(`  data:   ${JSON.stringify(r.data, null, 2)}`);
@@ -408,7 +408,7 @@ async function test6_feedbackLoop() {
   ];
 
   const MAX_RETRIES = 2;
-  let result: StructuredResult<any> | null = null;
+  let result: ShapedResult<any> | null = null;
 
   for (let attempt = 1; attempt <= MAX_RETRIES + 1; attempt++) {
     console.log(`  Attempt ${attempt}...`);

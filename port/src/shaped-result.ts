@@ -1,5 +1,5 @@
 /**
- * StructuredResult<T> — the user-facing result type.
+ * ShapedResult<T> — the user-facing result type.
  *
  * Wraps the internal CoercionResult with a clean DX:
  *   - .ok / .data / .errors — status + value
@@ -49,10 +49,10 @@ const REPAIR_FLAGS = new Set([
 ]);
 
 // ---------------------------------------------------------------------------
-// StructuredResult
+// ShapedResult
 // ---------------------------------------------------------------------------
 
-export class StructuredResult<T = unknown> {
+export class ShapedResult<T = unknown> {
   /** Whether parsing + coercion + validation fully succeeded. */
   readonly ok: boolean;
 
@@ -127,7 +127,7 @@ export class StructuredResult<T = unknown> {
    */
   assert(): T {
     if (!this.ok || this.data === undefined) {
-      throw new StructuredResultError(
+      throw new ShapedResultError(
         this.errors.length > 0
           ? this.errors.join('; ')
           : 'Structuring failed with no error message',
@@ -184,15 +184,15 @@ export class StructuredResult<T = unknown> {
 }
 
 // ---------------------------------------------------------------------------
-// StructuredResultError — thrown by .assert()
+// ShapedResultError — thrown by .assert()
 // ---------------------------------------------------------------------------
 
-export class StructuredResultError extends Error {
-  readonly result: StructuredResult;
+export class ShapedResultError extends Error {
+  readonly result: ShapedResult;
 
-  constructor(message: string, result: StructuredResult) {
+  constructor(message: string, result: ShapedResult) {
     super(message);
-    this.name = 'StructuredResultError';
+    this.name = 'ShapedResultError';
     this.result = result;
   }
 }
